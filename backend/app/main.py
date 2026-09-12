@@ -5,12 +5,13 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, and_, func
 from app.core.config import settings
 from app.db import Base, engine, get_db
-from app.models import User, Skill, SwapRequest, Message, Rating, Notification, LearningSession
+from app.models import Conversation, LearningSession, Message, Notification, Profile, Rating, Skill, SkillCatalog, SwapRequest, User
 from app.schemas import *
 from app.auth import hash_password, verify_password, create_token, current_user
 from app.ai import match_score, explanation, live_match_analysis
 
-Base.metadata.create_all(bind=engine)
+from app.db import initialize_database
+initialize_database()
 app=FastAPI(title=settings.PROJECT_NAME, version="1.0.0", description="AI-powered peer skill exchange platform")
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins,allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
@@ -20,6 +21,14 @@ def skill_out(s):
 def notify(db, user_id, title, body, kind="info"):
     db.add(Notification(user_id=user_id,title=title,body=body,kind=kind))
 
+def conversation_for(db, first_id, second_id):
+    one, two=sorted((first_id, second_id))
+    conversation=db.query(Conversation).filter_by(participant_one_id=one,participant_two_id=two).first()
+    if not conversation:
+        conversation=Conversation(participant_one_id=one,participant_two_id=two)
+        db.add(conversation); db.flush()
+    return conversation
+
 @app.get("/")
 def root(): return {"name":settings.PROJECT_NAME,"status":"online","docs":"/docs"}
 @app.get("/health")
@@ -28,7 +37,7 @@ def health(): return {"status":"healthy"}
 @app.post("/api/v1/auth/register",response_model=Token)
 def register(data:UserCreate,db:Session=Depends(get_db)):
     if db.query(User).filter(User.email==data.email).first(): raise HTTPException(400,"Email already registered")
-    u=User(email=data.email,password_hash=hash_password(data.password),full_name=data.full_name,location=data.location)
+    u=User(email=data.email,password_hash=hash_password(data.password),full_name=data.full_name,location=data.location,profile=Profile(location=data.location))
     db.add(u); db.commit(); db.refresh(u)
     return {"access_token":create_token(u.id),"user":u}
 @app.post("/api/v1/auth/login",response_model=Token)
@@ -40,7 +49,10 @@ def login(data:Login,db:Session=Depends(get_db)):
 def me(user:User=Depends(current_user)): return user
 @app.put("/api/v1/users/me",response_model=UserOut)
 def update_me(data:UserUpdate,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    for k,v in data.model_dump(exclude_none=True).items(): setattr(user,k,v)
+    if not user.profile: user.profile=Profile()
+    for k,v in data.model_dump(exclude_none=True).items():
+        setattr(user,k,v)
+        if k in {"bio","location","avatar_url"}: setattr(user.profile,k,v)
     db.commit(); db.refresh(user); return user
 
 @app.get("/api/v1/skills",response_model=list[SkillOut])
@@ -59,7 +71,10 @@ def get_skill(skill_id:int,db:Session=Depends(get_db)):
 @app.post("/api/v1/skills",response_model=SkillOut)
 def create_skill(data:SkillCreate,user:User=Depends(current_user),db:Session=Depends(get_db)):
     if data.type not in {"Offering","Requesting"}: raise HTTPException(400,"type must be Offering or Requesting")
-    s=Skill(owner_id=user.id,**data.model_dump()); db.add(s); db.commit(); db.refresh(s); return db.query(Skill).options(joinedload(Skill.owner)).get(s.id)
+    values=data.model_dump()
+    catalog=db.query(SkillCatalog).filter(SkillCatalog.name==values["title"],SkillCatalog.category==values["category"]).first()
+    if not catalog: catalog=SkillCatalog(name=values["title"],category=values["category"]); db.add(catalog); db.flush()
+    s=Skill(owner_id=user.id,catalog_id=catalog.id,**values); db.add(s); db.commit(); db.refresh(s); return db.query(Skill).options(joinedload(Skill.owner)).get(s.id)
 @app.delete("/api/v1/skills/{skill_id}")
 def delete_skill(skill_id:int,user:User=Depends(current_user),db:Session=Depends(get_db)):
     s=db.get(Skill,skill_id)
@@ -109,7 +124,9 @@ def create_swap(data:SwapCreate,user:User=Depends(current_user),db:Session=Depen
     if not offered or not requested: raise HTTPException(404,"Skill not found")
     if offered.owner_id!=user.id: raise HTTPException(403,"Offered skill must belong to you")
     if requested.owner_id==user.id: raise HTTPException(400,"Choose another user's requested skill")
+    if offered.type!="Offering" or requested.type!="Requesting": raise HTTPException(400,"Choose an offered skill and another user's learning goal")
     receiver_id=requested.owner_id
+    if data.receiver_id!=receiver_id: raise HTTPException(400,"Receiver does not own the requested skill")
     exists=db.query(SwapRequest).filter(SwapRequest.requester_id==user.id,SwapRequest.requested_skill_id==requested.id,SwapRequest.status=="pending").first()
     if exists: raise HTTPException(409,"A pending request already exists")
     r=SwapRequest(requester_id=user.id,receiver_id=receiver_id,offered_skill_id=offered.id,requested_skill_id=requested.id,message=data.message)
@@ -157,12 +174,14 @@ def update_swap(swap_id:int,data:SwapStatus,user:User=Depends(current_user),db:S
 
 @app.post("/api/v1/messages")
 def send_message(data:MessageCreate,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if not db.get(User,data.receiver_id): raise HTTPException(404,"User not found")
-    m=Message(sender_id=user.id,receiver_id=data.receiver_id,body=data.body); db.add(m); notify(db,data.receiver_id,"New message",f"{user.full_name} sent you a message.","message"); db.commit(); db.refresh(m)
+    if data.receiver_id==user.id or not db.get(User,data.receiver_id): raise HTTPException(404,"User not found")
+    conversation=conversation_for(db,user.id,data.receiver_id)
+    m=Message(conversation_id=conversation.id,sender_id=user.id,receiver_id=data.receiver_id,body=data.body); db.add(m); notify(db,data.receiver_id,"New message",f"{user.full_name} sent you a message.","message"); db.commit(); db.refresh(m)
     return {"id":m.id,"body":m.body,"sender_id":m.sender_id,"receiver_id":m.receiver_id,"created_at":m.created_at}
 @app.get("/api/v1/messages/{other_id}")
 def messages(other_id:int,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    rows=db.query(Message).filter(or_(and_(Message.sender_id==user.id,Message.receiver_id==other_id),and_(Message.sender_id==other_id,Message.receiver_id==user.id))).order_by(Message.created_at.asc()).all()
+    conversation=db.query(Conversation).filter(or_(and_(Conversation.participant_one_id==min(user.id,other_id),Conversation.participant_two_id==max(user.id,other_id)))).first()
+    rows=db.query(Message).filter(Message.conversation_id==conversation.id).order_by(Message.created_at.asc()).all() if conversation else db.query(Message).filter(or_(and_(Message.sender_id==user.id,Message.receiver_id==other_id),and_(Message.sender_id==other_id,Message.receiver_id==user.id))).order_by(Message.created_at.asc()).all()
     return [{"id":m.id,"body":m.body,"sender_id":m.sender_id,"receiver_id":m.receiver_id,"created_at":m.created_at} for m in rows]
 
 @app.post("/api/v1/ratings/{swap_id}")
@@ -218,6 +237,10 @@ def create_session(data:SessionCreate,user:User=Depends(current_user),db:Session
     if data.participant_id==user.id: raise HTTPException(400,"Choose another participant")
     participant=db.get(User,data.participant_id)
     if not participant: raise HTTPException(404,"Participant not found")
+    if data.swap_id:
+        swap=db.get(SwapRequest,data.swap_id)
+        if not swap or swap.status not in {"accepted","completed"} or {user.id,data.participant_id}!={swap.requester_id,swap.receiver_id}:
+            raise HTTPException(400,"Sessions must reference an accepted swap between the participants")
     s=LearningSession(organizer_id=user.id,**data.model_dump())
     db.add(s); notify(db,data.participant_id,"Learning session scheduled",f"{user.full_name} scheduled: {data.topic}","session"); db.commit(); db.refresh(s)
     return {"id":s.id,"topic":s.topic,"scheduled_at":s.scheduled_at,"duration_minutes":s.duration_minutes,"meeting_link":s.meeting_link,"status":s.status,"participant":{"id":participant.id,"name":participant.full_name}}
@@ -232,6 +255,7 @@ def update_session(session_id:int,data:SessionStatus,user:User=Depends(current_u
     s=db.get(LearningSession,session_id)
     if not s or user.id not in {s.organizer_id,s.participant_id}: raise HTTPException(404,"Session not found")
     if data.status not in {"scheduled","completed","cancelled"}: raise HTTPException(400,"Invalid session status")
+    if s.status in {"completed","cancelled"} and data.status!=s.status: raise HTTPException(409,f"Cannot change a {s.status} session")
     s.status=data.status; db.commit(); return {"message":"Session updated","status":s.status}
 
 
