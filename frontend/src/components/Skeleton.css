@@ -1,0 +1,58 @@
+/* Skeleton shimmer loading states */
+.skeleton {
+  display: block;
+  background: linear-gradient(90deg, #e8ede6 25%, #f4f7f2 50%, #e8ede6 75%);
+  background-size: 400% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.skeleton-text { height: 14px; border-radius: 6px; margin: 6px 0; }
+.skeleton-avatar { flex: none; }
+
+.skeleton-card {
+  padding: 20px;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-card-top {
+  display: flex;
+  gap: 8px;
+}
+
+.skeleton-card-bottom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid #eef1eb;
+}
+
+.skeleton-stat .skeleton { background: linear-gradient(90deg, #eaefe8 25%, #f5f8f3 50%, #eaefe8 75%); background-size: 400% 100%; animation: shimmer 1.8s ease-in-out infinite; }
+
+.skeleton-thread {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 18px;
+}
+
+.skeleton-thread > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeleton-session > div > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

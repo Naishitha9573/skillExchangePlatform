@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
     DEMO_MODE: bool = True
+    STUN_URLS: str = "stun:stun.l.google.com:19302"
+    TURN_URLS: str = ""
+    TURN_SECRET: str = ""
+    TURN_CREDENTIAL_TTL_SECONDS: int = 14400
     model_config = SettingsConfigDict(env_file=BACKEND_DIR / ".env", extra="ignore")
     @property
     def cors_origins(self):

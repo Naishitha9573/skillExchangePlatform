@@ -1,34 +1,28 @@
 import secrets
 import httpx
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, func
 from app.core.config import settings
-from app.db import Base, engine, get_db
-from app.models import Conversation, LearningSession, Message, Notification, Profile, Rating, Skill, SkillCatalog, SwapRequest, User
-from app.schemas import *
+from app.db import get_db
+from app.models import LearningSession, Notification, Profile, Rating, Skill, SkillCatalog, SwapRequest, User
+from app.schemas import CoachRequest, GoogleCallback, Login, RatingCreate, SkillCreate, SkillOut, SwapCreate, SwapStatus, Token, UserCreate, UserOut, UserUpdate
 from app.auth import hash_password, verify_password, create_token, create_oauth_state, verify_oauth_state, current_user
-from app.ai import match_score, explanation, live_match_analysis
+from app.ai import match_score, explanation, live_match_analysis, tokens
 
+from app.collaboration import router as collaboration_router, conversation_for, notify, utc_iso
+from app.realtime import router as realtime_router, hub
 from app.db import initialize_database
 initialize_database()
 app=FastAPI(title=settings.PROJECT_NAME, version="1.0.0", description="AI-powered peer skill exchange platform")
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins,allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
+app.include_router(collaboration_router)
+app.include_router(realtime_router)
+
 def skill_out(s):
     return SkillOut.model_validate(s)
-
-def notify(db, user_id, title, body, kind="info"):
-    db.add(Notification(user_id=user_id,title=title,body=body,kind=kind))
-
-def conversation_for(db, first_id, second_id):
-    one, two=sorted((first_id, second_id))
-    conversation=db.query(Conversation).filter_by(participant_one_id=one,participant_two_id=two).first()
-    if not conversation:
-        conversation=Conversation(participant_one_id=one,participant_two_id=two)
-        db.add(conversation); db.flush()
-    return conversation
 
 @app.get("/")
 def root(): return {"name":settings.PROJECT_NAME,"status":"online","docs":"/docs"}
@@ -48,20 +42,26 @@ def login(data:Login,db:Session=Depends(get_db)):
     return {"access_token":create_token(u.id),"user":u}
 
 @app.get("/api/v1/auth/google/authorize")
-def google_authorize():
+def google_authorize(response:Response):
     if not settings.GOOGLE_CLIENT_ID:
         raise HTTPException(503,"Google sign-in requires GOOGLE_CLIENT_ID in backend/.env")
     if not settings.GOOGLE_REDIRECT_URI:
         raise HTTPException(503,"Google sign-in requires GOOGLE_REDIRECT_URI in backend/.env")
     from urllib.parse import urlencode
-    params={"client_id":settings.GOOGLE_CLIENT_ID,"redirect_uri":settings.GOOGLE_REDIRECT_URI,"response_type":"code","scope":"openid email profile","state":create_oauth_state(),"access_type":"offline","prompt":"select_account"}
+    state=create_oauth_state()
+    secure=settings.GOOGLE_REDIRECT_URI.startswith("https://")
+    response.set_cookie("skillswap_oauth_state",state,httponly=True,secure=secure,samesite="none" if secure else "lax",max_age=600,path="/api/v1/auth/google/callback")
+    response.headers["Cache-Control"]="no-store"
+    params={"client_id":settings.GOOGLE_CLIENT_ID,"redirect_uri":settings.GOOGLE_REDIRECT_URI,"response_type":"code","scope":"openid email profile","state":state,"prompt":"select_account"}
     return {"authorization_url":"https://accounts.google.com/o/oauth2/v2/auth?"+urlencode(params)}
 
 @app.post("/api/v1/auth/google/callback",response_model=Token)
-def google_callback(data:GoogleCallback,db:Session=Depends(get_db)):
+def google_callback(data:GoogleCallback,request:Request,response:Response,db:Session=Depends(get_db)):
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET or not settings.GOOGLE_REDIRECT_URI:
         raise HTTPException(503,"Google sign-in requires GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI in backend/.env")
     try:
+        if not secrets.compare_digest(request.cookies.get("skillswap_oauth_state", ""), data.state):
+            raise ValueError("OAuth browser session does not match")
         verify_oauth_state(data.state)
     except Exception:
         raise HTTPException(400,"Google sign-in session expired or is invalid")
@@ -83,7 +83,13 @@ def google_callback(data:GoogleCallback,db:Session=Depends(get_db)):
         name=str(profile.get("name") or email.split("@")[0]).strip()[:120]
         user=User(email=email,password_hash=hash_password(secrets.token_urlsafe(32)),full_name=name,avatar_url=profile.get("picture","") or "",profile=Profile(avatar_url=profile.get("picture","") or ""))
         db.add(user); db.commit(); db.refresh(user)
+    response.delete_cookie("skillswap_oauth_state",path="/api/v1/auth/google/callback")
+    response.headers["Cache-Control"]="no-store"
     return {"access_token":create_token(user.id),"user":user}
+
+@app.get("/api/v1/auth/providers")
+def auth_providers():
+    return {"google":bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET and settings.GOOGLE_REDIRECT_URI)}
 @app.get("/api/v1/users/me",response_model=UserOut)
 def me(user:User=Depends(current_user)): return user
 @app.put("/api/v1/users/me",response_model=UserOut)
@@ -102,6 +108,10 @@ def list_skills(search:str="",category:str="",skill_type:str="",db:Session=Depen
     if category: q=q.filter(Skill.category==category)
     if skill_type: q=q.filter(Skill.type==skill_type)
     return q.limit(100).all()
+@app.get("/api/v1/skills/mine",response_model=list[SkillOut])
+def my_skills(user:User=Depends(current_user),db:Session=Depends(get_db)):
+    return db.query(Skill).options(joinedload(Skill.owner)).filter(Skill.owner_id==user.id).order_by(Skill.created_at.desc()).all()
+
 @app.get("/api/v1/skills/{skill_id}",response_model=SkillOut)
 def get_skill(skill_id:int,db:Session=Depends(get_db)):
     s=db.query(Skill).options(joinedload(Skill.owner)).filter(Skill.id==skill_id).first()
@@ -119,6 +129,8 @@ def delete_skill(skill_id:int,user:User=Depends(current_user),db:Session=Depends
     s=db.get(Skill,skill_id)
     if not s: raise HTTPException(404,"Skill not found")
     if s.owner_id!=user.id: raise HTTPException(403,"Not your skill")
+    if db.query(SwapRequest.id).filter(or_(SwapRequest.offered_skill_id==s.id,SwapRequest.requested_skill_id==s.id)).first():
+        raise HTTPException(409,"This skill belongs to an exchange and must be kept in its history")
     db.delete(s); db.commit(); return {"message":"Skill deleted"}
 
 @app.get("/api/v1/recommendations")
@@ -158,18 +170,21 @@ def dashboard(user:User=Depends(current_user),db:Session=Depends(get_db)):
     return {"offered":offered,"requested":requested,"incoming":incoming,"outgoing":outgoing,"completed":completed,"rating":round(rating or 0,1),"xp":xp,"level":level,"next_level_xp":level*300,"badges":badges,"streak":min(7,completed+ratings_count)}
 
 @app.post("/api/v1/swaps",response_model=dict)
-def create_swap(data:SwapCreate,user:User=Depends(current_user),db:Session=Depends(get_db)):
+def create_swap(data:SwapCreate,tasks:BackgroundTasks,user:User=Depends(current_user),db:Session=Depends(get_db)):
     offered=db.get(Skill,data.offered_skill_id); requested=db.get(Skill,data.requested_skill_id)
     if not offered or not requested: raise HTTPException(404,"Skill not found")
     if offered.owner_id!=user.id: raise HTTPException(403,"Offered skill must belong to you")
     if requested.owner_id==user.id: raise HTTPException(400,"Choose another user's requested skill")
-    if offered.type!="Offering" or requested.type!="Requesting": raise HTTPException(400,"Choose an offered skill and another user's learning goal")
+    if offered.type!="Offering": raise HTTPException(400,"Choose one of your offered skills")
     receiver_id=requested.owner_id
     if data.receiver_id!=receiver_id: raise HTTPException(400,"Receiver does not own the requested skill")
     exists=db.query(SwapRequest).filter(SwapRequest.requester_id==user.id,SwapRequest.requested_skill_id==requested.id,SwapRequest.status=="pending").first()
     if exists: raise HTTPException(409,"A pending request already exists")
     r=SwapRequest(requester_id=user.id,receiver_id=receiver_id,offered_skill_id=offered.id,requested_skill_id=requested.id,message=data.message)
-    db.add(r); notify(db, receiver_id, "New swap proposal", f"{user.full_name} proposed a skill exchange.", "swap"); db.commit(); db.refresh(r); return {"id":r.id,"status":r.status,"message":"Swap request sent"}
+    db.add(r); notify(db, receiver_id, "New swap proposal", f"{user.full_name} proposed a skill exchange.", "swap"); db.commit(); db.refresh(r)
+    tasks.add_task(hub.publish, [user.id, receiver_id], {"type":"swaps.changed"})
+    tasks.add_task(hub.publish, [receiver_id], {"type":"notifications.changed"})
+    return {"id":r.id,"status":r.status,"message":"Swap request sent"}
 
 def swap_json(r):
     return {"id":r.id,"status":r.status,"message":r.message,"created_at":r.created_at,"requester":{"id":r.requester.id,"full_name":r.requester.full_name,"email":r.requester.email},"receiver":{"id":r.receiver.id,"full_name":r.receiver.full_name},"offered_skill":{"id":r.offered_skill.id,"title":r.offered_skill.title},"requested_skill":{"id":r.requested_skill.id,"title":r.requested_skill.title}}
@@ -178,7 +193,7 @@ def swaps(user:User=Depends(current_user),db:Session=Depends(get_db)):
     rows=db.query(SwapRequest).options(joinedload(SwapRequest.requester),joinedload(SwapRequest.receiver),joinedload(SwapRequest.offered_skill),joinedload(SwapRequest.requested_skill)).filter(or_(SwapRequest.requester_id==user.id,SwapRequest.receiver_id==user.id)).order_by(SwapRequest.created_at.desc()).all()
     return [swap_json(r) for r in rows]
 @app.patch("/api/v1/swaps/{swap_id}")
-def update_swap(swap_id:int,data:SwapStatus,user:User=Depends(current_user),db:Session=Depends(get_db)):
+def update_swap(swap_id:int,data:SwapStatus,tasks:BackgroundTasks,user:User=Depends(current_user),db:Session=Depends(get_db)):
     r=db.query(SwapRequest).filter(SwapRequest.id==swap_id).first()
     if not r: raise HTTPException(404,"Request not found")
     if r.receiver_id!=user.id and r.requester_id!=user.id: raise HTTPException(403,"Not your request")
@@ -206,42 +221,41 @@ def update_swap(swap_id:int,data:SwapStatus,user:User=Depends(current_user),db:S
         raise HTTPException(409,f"Cannot change a {current} swap to {target}")
 
     r.status=target
+    if target == "accepted":
+        conversation_for(db, r.requester_id, r.receiver_id)
     recipient_id=r.requester_id if user.id==r.receiver_id else r.receiver_id
     notify(db, recipient_id, "Swap updated", f"Your swap request is now {target}.", "swap")
     db.commit()
+    tasks.add_task(hub.publish, [r.requester_id, r.receiver_id], {"type":"swaps.changed"})
+    tasks.add_task(hub.publish, [r.requester_id, r.receiver_id], {"type":"conversations.changed"})
+    tasks.add_task(hub.publish, [recipient_id], {"type":"notifications.changed"})
     return {"message":f"Request {target}","status":r.status}
-
-@app.post("/api/v1/messages")
-def send_message(data:MessageCreate,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if data.receiver_id==user.id or not db.get(User,data.receiver_id): raise HTTPException(404,"User not found")
-    conversation=conversation_for(db,user.id,data.receiver_id)
-    m=Message(conversation_id=conversation.id,sender_id=user.id,receiver_id=data.receiver_id,body=data.body); db.add(m); notify(db,data.receiver_id,"New message",f"{user.full_name} sent you a message.","message"); db.commit(); db.refresh(m)
-    return {"id":m.id,"body":m.body,"sender_id":m.sender_id,"receiver_id":m.receiver_id,"created_at":m.created_at}
-@app.get("/api/v1/messages/{other_id}")
-def messages(other_id:int,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    conversation=db.query(Conversation).filter(or_(and_(Conversation.participant_one_id==min(user.id,other_id),Conversation.participant_two_id==max(user.id,other_id)))).first()
-    rows=db.query(Message).filter(Message.conversation_id==conversation.id).order_by(Message.created_at.asc()).all() if conversation else db.query(Message).filter(or_(and_(Message.sender_id==user.id,Message.receiver_id==other_id),and_(Message.sender_id==other_id,Message.receiver_id==user.id))).order_by(Message.created_at.asc()).all()
-    return [{"id":m.id,"body":m.body,"sender_id":m.sender_id,"receiver_id":m.receiver_id,"created_at":m.created_at} for m in rows]
 
 @app.post("/api/v1/ratings/{swap_id}")
 def rate(swap_id:int,data:RatingCreate,user:User=Depends(current_user),db:Session=Depends(get_db)):
     r=db.get(SwapRequest,swap_id)
-    if not r or r.status not in {"accepted","completed"}: raise HTTPException(400,"Rate an accepted/completed swap")
+    if not r or r.status != "completed": raise HTTPException(400,"Complete the swap before leaving a review")
     rated=r.receiver_id if r.requester_id==user.id else r.requester_id
     if user.id not in {r.requester_id,r.receiver_id}: raise HTTPException(403,"Not part of swap")
     if db.query(Rating).filter(Rating.rater_id==user.id,Rating.swap_id==swap_id).first(): raise HTTPException(409,"Already rated")
     x=Rating(rater_id=user.id,rated_id=rated,swap_id=swap_id,score=data.score,review=data.review); db.add(x); db.commit(); return {"message":"Rating submitted"}
 
+@app.get("/api/v1/ratings")
+def my_ratings(user:User=Depends(current_user),db:Session=Depends(get_db)):
+    return [{"swap_id":r.swap_id,"score":r.score,"review":r.review} for r in db.query(Rating).filter(Rating.rater_id==user.id).all()]
+
 @app.get("/api/v1/notifications")
 def notifications(user:User=Depends(current_user),db:Session=Depends(get_db)):
     rows=db.query(Notification).filter(Notification.user_id==user.id).order_by(Notification.created_at.desc()).limit(30).all()
-    return [{"id":n.id,"title":n.title,"body":n.body,"kind":n.kind,"read":bool(n.read),"created_at":n.created_at} for n in rows]
+    return [{"id":n.id,"title":n.title,"body":n.body,"kind":n.kind,"read":bool(n.read),"created_at":utc_iso(n.created_at)} for n in rows]
 
 @app.patch("/api/v1/notifications/{notification_id}/read")
-def read_notification(notification_id:int,user:User=Depends(current_user),db:Session=Depends(get_db)):
+def read_notification(notification_id:int,tasks:BackgroundTasks,user:User=Depends(current_user),db:Session=Depends(get_db)):
     n=db.query(Notification).filter(Notification.id==notification_id,Notification.user_id==user.id).first()
     if not n: raise HTTPException(404,"Notification not found")
-    n.read=1; db.commit(); return {"message":"Notification marked read"}
+    n.read=1; db.commit()
+    tasks.add_task(hub.publish, [user.id], {"type":"notifications.changed"})
+    return {"message":"Notification marked read"}
 
 @app.get("/api/v1/leaderboard")
 def leaderboard(db:Session=Depends(get_db)):
@@ -271,33 +285,6 @@ def coach(data:CoachRequest,user:User=Depends(current_user),db:Session=Depends(g
     ]
     return {"target":target,"goal":data.goal,"current_skills":current,"plan":phases,"mentor_matches":matched,"tip":f"Your fastest path is to combine {target} practice with a real peer exchange. Aim for 3 focused sessions per week."}
 
-@app.post("/api/v1/sessions")
-def create_session(data:SessionCreate,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    if data.participant_id==user.id: raise HTTPException(400,"Choose another participant")
-    participant=db.get(User,data.participant_id)
-    if not participant: raise HTTPException(404,"Participant not found")
-    if data.swap_id:
-        swap=db.get(SwapRequest,data.swap_id)
-        if not swap or swap.status not in {"accepted","completed"} or {user.id,data.participant_id}!={swap.requester_id,swap.receiver_id}:
-            raise HTTPException(400,"Sessions must reference an accepted swap between the participants")
-    s=LearningSession(organizer_id=user.id,**data.model_dump())
-    db.add(s); notify(db,data.participant_id,"Learning session scheduled",f"{user.full_name} scheduled: {data.topic}","session"); db.commit(); db.refresh(s)
-    return {"id":s.id,"topic":s.topic,"scheduled_at":s.scheduled_at,"duration_minutes":s.duration_minutes,"meeting_link":s.meeting_link,"status":s.status,"participant":{"id":participant.id,"name":participant.full_name}}
-
-@app.get("/api/v1/sessions")
-def list_sessions(user:User=Depends(current_user),db:Session=Depends(get_db)):
-    rows=db.query(LearningSession).options(joinedload(LearningSession.organizer),joinedload(LearningSession.participant)).filter(or_(LearningSession.organizer_id==user.id,LearningSession.participant_id==user.id)).order_by(LearningSession.scheduled_at.asc()).all()
-    return [{"id":s.id,"topic":s.topic,"scheduled_at":s.scheduled_at,"duration_minutes":s.duration_minutes,"meeting_link":s.meeting_link,"status":s.status,"organizer":{"id":s.organizer.id,"name":s.organizer.full_name},"participant":{"id":s.participant.id,"name":s.participant.full_name}} for s in rows]
-
-@app.patch("/api/v1/sessions/{session_id}")
-def update_session(session_id:int,data:SessionStatus,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    s=db.get(LearningSession,session_id)
-    if not s or user.id not in {s.organizer_id,s.participant_id}: raise HTTPException(404,"Session not found")
-    if data.status not in {"scheduled","completed","cancelled"}: raise HTTPException(400,"Invalid session status")
-    if s.status in {"completed","cancelled"} and data.status!=s.status: raise HTTPException(409,f"Cannot change a {s.status} session")
-    s.status=data.status; db.commit(); return {"message":"Session updated","status":s.status}
-
-
 # ---------------- Hackathon Innovation APIs ----------------
 @app.get("/api/v1/innovation/impact")
 def innovation_impact(user:User=Depends(current_user),db:Session=Depends(get_db)):
@@ -309,7 +296,7 @@ def innovation_impact(user:User=Depends(current_user),db:Session=Depends(get_db)
     hours=round(sum((x.duration_minutes or 60)/60 for x in session_rows),1)
     people=len({x.receiver_id if x.requester_id==user.id else x.requester_id for x in swaps})
     knowledge_points=sum(20 if x.type=="Offering" else 10 for x in mine)+len(completed)*50
-    return {"skills_shared":sum(x.type=="Offering" for x in mine),"learning_goals":sum(x.type=="Requesting" for x in mine),"people_connected":people,"sessions_completed":len(completed),"learning_hours":hours,"knowledge_points":knowledge_points,"average_rating":round(sum(x.score for x in ratings)/len(ratings),1) if ratings else 0,"impact_message":f"You have contributed approximately {hours:g} community learning hour(s). Keep exchanging to grow your impact."}
+    return {"skills_shared":sum(x.type=="Offering" for x in mine),"learning_goals":sum(x.type=="Requesting" for x in mine),"people_connected":people,"sessions_completed":len(session_rows),"learning_hours":hours,"knowledge_points":knowledge_points,"average_rating":round(sum(x.score for x in ratings)/len(ratings),1) if ratings else 0,"impact_message":f"You have contributed approximately {hours:g} community learning hour(s). Keep exchanging to grow your impact."}
 
 @app.post("/api/v1/ai/match-report")
 def match_report(data:CoachRequest,user:User=Depends(current_user),db:Session=Depends(get_db)):
@@ -379,7 +366,7 @@ def judge_summary(user:User=Depends(current_user),db:Session=Depends(get_db)):
     hours=round(sum((x.duration_minutes or 60)/60 for x in sessions),1)
     ratings=db.query(Rating).all()
     avg=round(sum(x.score for x in ratings)/len(ratings),1) if ratings else 0
-    return {"users":total_users,"skills":total_skills,"swaps":total_swaps,"completed_swaps":completed,"learning_hours":hours,"average_rating":avg,"ai_provider":"Gemini" if settings.GEMINI_API_KEY else "Local semantic matcher","demo_accounts":[{"email":"ananya@demo.com","password":"demo123","story":"React mentor → Python learner"},{"email":"rahul@demo.com","password":"demo123","story":"Python mentor → React learner"}],"demo_flow":["Discover","AI Match","Swap","Message","Schedule","Learn","Complete","Rate"]}
+    return {"users":total_users,"skills":total_skills,"swaps":total_swaps,"completed_swaps":completed,"learning_hours":hours,"average_rating":avg,"ai_provider":"Gemini" if settings.GEMINI_API_KEY else "Local semantic matcher","demo_accounts":[{"email":"ananya@demo.com","password":"demo123","story":"React mentor → Python learner"},{"email":"rahul@demo.com","password":"demo123","story":"Python mentor → React learner"}] if settings.DEMO_MODE else [],"demo_flow":["Discover","AI Match","Swap","Message","Schedule","Learn","Complete","Rate"]}
 
 @app.get("/api/v1/challenges")
 def challenges(user:User=Depends(current_user)):

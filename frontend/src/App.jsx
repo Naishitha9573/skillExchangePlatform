@@ -1,2 +1,91 @@
-import {BrowserRouter,Routes,Route,Navigate} from 'react-router-dom'; import {AuthProvider} from './context/AuthContext'; import Protected from './components/Protected'; import Navbar from './components/Navbar'; import Landing from './pages/Landing'; import {Login,Register} from './pages/Auth'; import Dashboard from './pages/Dashboard'; import Feed from './pages/Feed'; import AddSkill from './pages/AddSkill'; import SkillDetail from './pages/SkillDetail'; import Swaps from './pages/Swaps'; import Messages from './pages/Messages'; import Profile from './pages/Profile'; import Coach from './pages/Coach'; import Leaderboard from './pages/Leaderboard'; import Sessions from './pages/Sessions'; import Innovation from './pages/Innovation'; import './styles.css'; import ErrorBoundary from './components/ErrorBoundary'; import JudgeMode from './pages/JudgeMode'; import Footer from './components/Footer'; import Legal from './pages/Legal';
-export default function App(){return <AuthProvider><ErrorBoundary><BrowserRouter><Navbar/><Routes><Route path="/" element={<Landing/>}/><Route path="/login" element={<Login/>}/><Route path="/register" element={<Register/>}/><Route path="/privacy" element={<Legal type="privacy"/>}/><Route path="/terms" element={<Legal type="terms"/>}/><Route path="/feed" element={<Feed/>}/><Route path="/skill/:id" element={<Protected><SkillDetail/></Protected>}/><Route path="/dashboard" element={<Protected><Dashboard/></Protected>}/><Route path="/add-skill" element={<Protected><AddSkill/></Protected>}/><Route path="/swaps" element={<Protected><Swaps/></Protected>}/><Route path="/messages" element={<Protected><Messages/></Protected>}/><Route path="/messages/:otherId" element={<Protected><Messages/></Protected>}/><Route path="/profile" element={<Protected><Profile/></Protected>}/><Route path="/coach" element={<Protected><Coach/></Protected>}/><Route path="/leaderboard" element={<Protected><Leaderboard/></Protected>}/><Route path="/sessions" element={<Protected><Sessions/></Protected>}/><Route path="/innovation" element={<Protected><Innovation/></Protected>}/><Route path="/judge" element={<Protected><JudgeMode/></Protected>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes><Footer/></BrowserRouter></ErrorBoundary></AuthProvider>}
+import {lazy,Suspense,useEffect} from 'react';
+import {BrowserRouter,Routes,Route,Navigate,useLocation} from 'react-router-dom';
+import {AuthProvider} from './context/AuthContext';
+import {RealtimeProvider} from './context/RealtimeContext';
+import Protected from './components/Protected';
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+import ErrorBoundary from './components/ErrorBoundary';
+import Landing from './pages/Landing';
+import {Login,Register,GoogleCallback} from './pages/Auth';
+import './styles.css';
+import './collaboration.css';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Feed = lazy(() => import('./pages/Feed'));
+const AddSkill = lazy(() => import('./pages/AddSkill'));
+const SkillDetail = lazy(() => import('./pages/SkillDetail'));
+const Swaps = lazy(() => import('./pages/Swaps'));
+const Messages = lazy(() => import('./pages/Messages'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Coach = lazy(() => import('./pages/Coach'));
+const Leaderboard = lazy(() => import('./pages/Leaderboard'));
+const Sessions = lazy(() => import('./pages/Sessions'));
+const VideoSession = lazy(() => import('./pages/VideoSession'));
+const Innovation = lazy(() => import('./pages/Innovation'));
+const JudgeMode = lazy(() => import('./pages/JudgeMode'));
+const Legal = lazy(() => import('./pages/Legal'));
+
+function ScrollPosition() {
+  const {pathname, hash} = useLocation();
+  useEffect(() => {
+    if (hash) {
+      const timer = setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({behavior: 'smooth'}), 100);
+      return () => clearTimeout(timer);
+    }
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+  return null;
+}
+
+const privatePage = Page => <Protected><Page/></Protected>;
+
+const LoadingFallback = () => (
+  <div className="container loading page-transition" role="status">
+    <span className="loading-orbit" style={{margin: '0 auto 16px', display: 'block', width: 28, height: 28}} />
+    Opening your learning space…
+  </div>
+);
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <RealtimeProvider>
+            <a className="skip-link" href="#app-content">Skip to content</a>
+            <Navbar/>
+            <ScrollPosition/>
+            <div id="app-content">
+              <Suspense fallback={<LoadingFallback/>}>
+                <Routes>
+                  <Route path="/" element={<Landing/>}/>
+                  <Route path="/login" element={<Login/>}/>
+                  <Route path="/register" element={<Register/>}/>
+                  <Route path="/auth/google/callback" element={<GoogleCallback/>}/>
+                  <Route path="/privacy" element={<Legal type="privacy"/>}/>
+                  <Route path="/terms" element={<Legal type="terms"/>}/>
+                  <Route path="/feed" element={<Feed/>}/>
+                  <Route path="/skill/:id" element={privatePage(SkillDetail)}/>
+                  <Route path="/dashboard" element={privatePage(Dashboard)}/>
+                  <Route path="/add-skill" element={privatePage(AddSkill)}/>
+                  <Route path="/swaps" element={privatePage(Swaps)}/>
+                  <Route path="/messages/:otherId?" element={privatePage(Messages)}/>
+                  <Route path="/profile" element={privatePage(Profile)}/>
+                  <Route path="/coach" element={privatePage(Coach)}/>
+                  <Route path="/leaderboard" element={privatePage(Leaderboard)}/>
+                  <Route path="/sessions" element={privatePage(Sessions)}/>
+                  <Route path="/sessions/:sessionId/call" element={privatePage(VideoSession)}/>
+                  <Route path="/innovation" element={privatePage(Innovation)}/>
+                  <Route path="/judge" element={privatePage(JudgeMode)}/>
+                  <Route path="*" element={<Navigate to="/" replace/>}/>
+                </Routes>
+              </Suspense>
+            </div>
+            <Footer/>
+          </RealtimeProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
+  );
+}

@@ -1,5 +1,4 @@
 import json, re, urllib.request
-from collections import Counter
 from app.core.config import settings
 
 STOP={"the","and","for","with","from","this","that","learn","learning","skill","skills","a","an","to","of","in","on","is","are","i","you","want","looking","become","good"}

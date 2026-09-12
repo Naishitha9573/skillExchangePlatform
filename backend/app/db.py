@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.core.config import settings
 
-connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+connect_args = {"check_same_thread": False, "timeout": 30} if settings.DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
 
 if settings.DATABASE_URL.startswith("sqlite"):
@@ -29,18 +29,20 @@ def initialize_database():
         "users": ["updated_at"],
         "skills": ["catalog_id", "updated_at"],
         "swap_requests": ["updated_at"],
-        "messages": ["conversation_id", "updated_at"],
+        "messages": ["conversation_id", "updated_at", "read_at", "client_id"],
         "ratings": ["updated_at"],
         "notifications": ["updated_at"],
         "learning_sessions": ["updated_at"],
     }
-    column_types={"updated_at":"DATETIME", "catalog_id":"INTEGER", "conversation_id":"INTEGER"}
+    column_types={"updated_at":"DATETIME", "catalog_id":"INTEGER", "conversation_id":"INTEGER", "read_at":"DATETIME", "client_id":"VARCHAR(36)"}
     with engine.begin() as connection:
         for table, columns in additions.items():
             existing={column["name"] for column in inspector.get_columns(table)}
             for column in columns:
                 if column not in existing:
                     connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {column_types[column]}"))
+                    if table == "messages" and column == "read_at":
+                        connection.execute(text("UPDATE messages SET read_at = :now"), {"now": now})
             if "updated_at" in columns:
                 connection.execute(text(f"UPDATE {table} SET updated_at = :now WHERE updated_at IS NULL"), {"now":now})
 
@@ -72,6 +74,8 @@ def initialize_database():
         """))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_skills_catalog_id ON skills (catalog_id)"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_messages_conversation_id ON messages (conversation_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_message_unread ON messages (conversation_id, receiver_id, read_at)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_message_sender_client ON messages (sender_id, client_id)"))
         connection.execute(text("""
             CREATE UNIQUE INDEX IF NOT EXISTS ix_swap_pending_pair
             ON swap_requests (requester_id, requested_skill_id) WHERE status = 'pending'
