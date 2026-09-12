@@ -11,6 +11,8 @@ import app.db as database_module
 from app.core.config import settings
 from app.db import initialize_database
 from conftest import auth
+from app.ai import hybrid_match, tokens
+from app.models import Skill
 
 
 def test_expired_and_wrong_token_type_rejected(client, people):
@@ -78,3 +80,19 @@ def test_original_database_upgrade_preserves_history(tmp_path, monkeypatch):
         assert connection.execute(text('SELECT COUNT(*) FROM conversations')).scalar() == 1
         assert connection.execute(text('SELECT COUNT(*) FROM profiles')).scalar() == 2
     legacy.dispose()
+
+def test_hybrid_match_understands_related_skills_and_levels():
+    learner=Skill(title="React.js",type="Requesting",category="Technology",description="Build front-end interfaces",tags="web",level="Beginner")
+    mentor=Skill(title="React frontend",type="Offering",category="Technology",description="Advanced component architecture",tags="javascript, ui",level="Advanced")
+    result=hybrid_match(learner,mentor)
+    assert result["score"] > 50
+    assert result["breakdown"]["complementary_skills"] == 100
+    assert result["breakdown"]["skill_level_fit"] == 100
+    assert "react" in tokens("React.js")
+
+def test_hybrid_match_does_not_claim_collaboration_without_history():
+    learner=Skill(title="Python",type="Requesting",category="Technology",description="Learn APIs",tags="backend",level="Beginner")
+    mentor=Skill(title="Python",type="Offering",category="Technology",description="Teach APIs",tags="backend",level="Advanced")
+    result=hybrid_match(learner,mentor)
+    assert result["collaborative_available"] is False
+    assert result["breakdown"]["behavioral_similarity"] == 0

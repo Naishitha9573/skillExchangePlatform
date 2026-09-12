@@ -9,7 +9,7 @@ from app.db import get_db
 from app.models import LearningSession, Notification, Profile, Rating, Skill, SkillCatalog, SwapRequest, User
 from app.schemas import CoachRequest, GoogleCallback, Login, RatingCreate, SkillCreate, SkillOut, SwapCreate, SwapStatus, Token, UserCreate, UserOut, UserUpdate
 from app.auth import hash_password, verify_password, create_token, create_oauth_state, verify_oauth_state, current_user
-from app.ai import match_score, explanation, live_match_analysis, tokens
+from app.ai import match_score, explanation, live_match_analysis, tokens, hybrid_match, match_reasons
 
 from app.collaboration import router as collaboration_router, conversation_for, notify, utc_iso
 from app.realtime import router as realtime_router, hub
@@ -23,6 +23,26 @@ app.include_router(realtime_router)
 
 def skill_out(s):
     return SkillOut.model_validate(s)
+
+def recommendation_context(user_id, candidate_id, db, source=None):
+    related=db.query(SwapRequest).filter(or_(SwapRequest.requester_id==user_id,SwapRequest.receiver_id==user_id),or_(SwapRequest.requester_id==candidate_id,SwapRequest.receiver_id==candidate_id)).all()
+    accepted=sum(x.status in {"accepted","completed"} for x in related)
+    completed=sum(x.status=="completed" for x in related)
+    ratings=db.query(Rating).filter(Rating.rated_id==candidate_id).all()
+    average=sum(x.score for x in ratings)/len(ratings) if ratings else 0
+    sessions=db.query(LearningSession).filter(or_(LearningSession.organizer_id==user_id,LearningSession.participant_id==user_id),or_(LearningSession.organizer_id==candidate_id,LearningSession.participant_id==candidate_id),LearningSession.status=="completed").count()
+    candidate_interactions=db.query(SwapRequest).filter(or_(SwapRequest.requester_id==candidate_id,SwapRequest.receiver_id==candidate_id),SwapRequest.status.in_(["accepted","completed"])).count()
+    collaborative=accepted>=2 and candidate_interactions>=2
+    reciprocal=0
+    if source:
+        opposite="Requesting" if source.type=="Offering" else "Offering"
+        reciprocal_skills=db.query(Skill).filter(Skill.owner_id==candidate_id,Skill.type==opposite).all()
+        reciprocal=max([hybrid_match(source,candidate_skill)["breakdown"]["content_compatibility"] for candidate_skill in reciprocal_skills] or [0])
+    return {"reputation_score":round(average/5*100) if average else 50,"rating_average":round(average,1),"successful_interaction_score":min(100,completed*35+sessions*25+accepted*10),"behavioral_similarity":min(100,accepted*25) if collaborative else 0,"collaborative_available":collaborative,"history_count":accepted+sessions,"reciprocal_score":reciprocal}
+
+def recommendation_row(source,target,context):
+    result=hybrid_match(source,target,context)
+    return {"score":result["score"],"skill":SkillOut.model_validate(target),"reason":" ".join(match_reasons(source,target,result,context)),"reasons":match_reasons(source,target,result,context),"breakdown":result["breakdown"],"weights":result["weights"],"signals":{"collaborative":result["collaborative_available"],"history_count":context.get("history_count",0),"rating":context.get("rating_average",0)}}
 
 @app.get("/")
 def root(): return {"name":settings.PROJECT_NAME,"status":"online","docs":"/docs"}
@@ -142,12 +162,10 @@ def recommendations(user:User=Depends(current_user),db:Session=Depends(get_db)):
     for target in others:
         best=None
         for source in mine:
-            # Complementary pair: one requests what the other offers, or vice versa.
-            complementary=(source.type!=target.type)
-            score=match_score(source,target)+(10 if complementary else 0)
-            if best is None or score>best[0]: best=(score,source)
+            row=recommendation_row(source,target,recommendation_context(user.id,target.owner_id,db,source))
+            if best is None or row["score"]>best[0]: best=(row["score"],source,row)
         if best:
-            out.append({"score":min(99,round(best[0])),"skill":SkillOut.model_validate(target),"reason":explanation(best[1],target)})
+            out.append(best[2])
     return sorted(out,key=lambda x:x["score"],reverse=True)[:12]
 
 @app.get("/api/v1/dashboard")
@@ -300,15 +318,11 @@ def innovation_impact(user:User=Depends(current_user),db:Session=Depends(get_db)
 
 @app.post("/api/v1/ai/match-report")
 def match_report(data:CoachRequest,user:User=Depends(current_user),db:Session=Depends(get_db)):
-    probe=Skill(title=data.target_skill,description=data.goal,tags=data.current_skills,category="Technology")
+    probe=Skill(title=data.target_skill,description=data.goal,tags=data.current_skills,category="Technology",type="Requesting",level="Beginner")
     rows=[]
     for target in db.query(Skill).options(joinedload(Skill.owner)).filter(Skill.owner_id!=user.id).all():
-        base=match_score(probe,target)
-        kw=len(tokens(data.current_skills)&tokens(target.tags))
-        category=40 if target.category.lower()==probe.category.lower() else 0
-        complementary=12 if target.type=="Offering" else 0
-        score=min(99,round(base+min(kw*8,16)+complementary))
-        rows.append({"skill":SkillOut.model_validate(target),"score":score,"breakdown":{"semantic_similarity":round(base),"shared_keywords":min(kw*8,16),"category_fit":category,"mentor_availability_bonus":complementary},"reason":explanation(probe,target)})
+        context=recommendation_context(user.id,target.owner_id,db,probe)
+        rows.append(recommendation_row(probe,target,context))
     return sorted(rows,key=lambda x:x["score"],reverse=True)[:8]
 
 @app.post("/api/v1/ai/skill-gap")
@@ -342,21 +356,23 @@ def live_ai_match(data:CoachRequest,user:User=Depends(current_user),db:Session=D
     candidate_payload=[{"candidate_id":s.id,"title":s.title,"owner":s.owner.full_name if s.owner else "Community mentor","category":s.category,"description":s.description,"tags":s.tags,"level":s.level} for s in candidates[:30]]
     profile={"target_skill":data.target_skill,"current_skills":data.current_skills,"goal":data.goal}
     live=live_match_analysis(profile,candidate_payload)
-    if live and isinstance(live.get("matches"),list):
-        by_id={s.id:s for s in candidates}
-        rows=[]
-        for m in live["matches"]:
-            sid=m.get("candidate_id")
-            if sid in by_id:
-                rows.append({"skill":SkillOut.model_validate(by_id[sid]),"score":max(0,min(100,int(m.get("score",0)))),"reason":m.get("reason","AI identified a strong learning fit."),"next_action":m.get("next_action","Send a swap request.") ,"provider":"Gemini"})
-        if rows: return {"provider":"Gemini","matches":rows}
-    # Safe deterministic fallback keeps the demo functional without an API key.
-    probe=Skill(title=data.target_skill,description=data.goal,tags=data.current_skills,category="Technology")
+    # Deterministic scores remain authoritative; Gemini can improve wording without
+    # changing database-driven ranking or making the feature require an API key.
+    probe=Skill(title=data.target_skill,description=data.goal,tags=data.current_skills,category="Technology",type="Requesting",level="Beginner")
+    contexts={s.id:recommendation_context(user.id,s.owner_id,db,probe) for s in candidates}
     rows=[]
     for s in candidates:
-        score=int(min(99,match_score(probe,s)+(12 if s.type=="Offering" else 0)))
-        rows.append({"skill":SkillOut.model_validate(s),"score":score,"reason":explanation(probe,s),"next_action":"Open the skill and propose a swap.","provider":"Local semantic matcher"})
-    return {"provider":"Local semantic matcher","matches":sorted(rows,key=lambda x:x["score"],reverse=True)[:6]}
+        row=recommendation_row(probe,s,contexts[s.id])
+        row.update({"next_action":"Open the skill and propose a swap.","provider":"Local hybrid matcher"})
+        rows.append(row)
+    if live and isinstance(live.get("matches"),list):
+        ai_by_id={m.get("candidate_id"):m for m in live["matches"]}
+        for row in rows:
+            ai=ai_by_id.get(row["skill"].id)
+            if ai and ai.get("reason"):
+                row["reason"]=f"{row['reason']} AI context: {ai['reason']}"
+                row["provider"]="Hybrid matcher + Gemini explanation"
+    return {"provider":"Hybrid matcher + Gemini explanation" if live else "Local hybrid matcher","matches":sorted(rows,key=lambda x:x["score"],reverse=True)[:6]}
 
 @app.get("/api/v1/judge/summary")
 def judge_summary(user:User=Depends(current_user),db:Session=Depends(get_db)):

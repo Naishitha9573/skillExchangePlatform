@@ -103,7 +103,7 @@ export default function Dashboard() {
           </div>
         ) : rec.length ? (
           <div className="grid">
-            {rec.slice(0, 3).map(x => <SkillCard key={x.skill.id} skill={x.skill} match={x.score}/>)}
+            {rec.slice(0, 3).map(x => <SkillCard key={x.skill.id} skill={x.skill} match={x.score} reason={x.reason} reasons={x.reasons} signals={x.signals}/>)}
           </div>
         ) : (
           <div className="empty card">
