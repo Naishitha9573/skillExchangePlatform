@@ -1,54 +1,144 @@
-"""Deterministic hackathon demo data.
-Run: python seed.py --reset
+"""Create the opt-in SkillSwap demo dataset.
+
+Run explicitly from backend/: ``python seed.py --reset``.
+This script is never imported by application startup.
 """
 import argparse
 from datetime import datetime, timedelta
-from app.db import Base,engine,SessionLocal
-from app.models import User,Skill,SwapRequest,Message,Rating,Notification,LearningSession
-from app.auth import hash_password
 
-Base.metadata.create_all(bind=engine)
-parser=argparse.ArgumentParser(); parser.add_argument('--reset',action='store_true'); args=parser.parse_args()
-db=SessionLocal()
-if args.reset:
-    for model in [Rating,Message,Notification,LearningSession,SwapRequest,Skill,User]:
-        db.query(model).delete()
+from app.auth import hash_password
+from app.db import SessionLocal, initialize_database
+from app.models import Conversation, LearningSession, Message, Notification, Profile, Rating, Skill, SkillCatalog, SwapRequest, User
+
+parser = argparse.ArgumentParser(description="Seed SkillSwap demo data")
+parser.add_argument("--reset", action="store_true", help="replace existing database rows")
+args = parser.parse_args()
+initialize_database()
+db = SessionLocal()
+
+try:
+    if args.reset:
+        for model in [Rating, Message, Notification, LearningSession, Conversation, SwapRequest, Skill, SkillCatalog, Profile, User]:
+            db.query(model).delete()
+        db.commit()
+    if db.query(User).count():
+        print("Demo data already exists. Use --reset to recreate it.")
+        raise SystemExit(0)
+
+    people = [
+        ("Ananya Rao", "ananya@demo.com", "Bengaluru", "Frontend developer helping people turn ideas into calm, clear interfaces.", "React", "Python"),
+        ("Rahul Verma", "rahul@demo.com", "Hyderabad", "Backend engineer who teaches practical APIs and thoughtful data workflows.", "Python", "React"),
+        ("Meera Nair", "meera@demo.com", "Kochi", "Visual designer focused on accessible systems, storytelling, and useful feedback.", "Figma", "English Communication"),
+        ("Arjun Shah", "arjun@demo.com", "Pune", "Cloud learner building reliable foundations one project at a time.", "AWS Cloud", "UI/UX Design"),
+        ("Zoya Khan", "zoya@demo.com", "Mumbai", "Product designer who enjoys making complex workflows feel welcoming.", "UI/UX Design", "SQL & Excel"),
+        ("Kabir Menon", "kabir@demo.com", "Chennai", "Data analyst turning messy spreadsheets into decisions teams can act on.", "SQL & Excel", "Public Speaking"),
+        ("Ishita Sen", "ishita@demo.com", "Kolkata", "Machine learning practitioner who loves explaining the intuition behind models.", "Machine Learning", "Photography"),
+        ("Dev Patel", "dev@demo.com", "Ahmedabad", "Java developer and patient pair-programming partner for early-career builders.", "Java", "FastAPI"),
+        ("Tara Iyer", "tara@demo.com", "Bengaluru", "Photographer documenting everyday places and teaching visual composition.", "Photography", "Digital Marketing"),
+        ("Nikhil Bansal", "nikhil@demo.com", "Delhi", "Video editor helping creators find rhythm, clarity, and a confident voice.", "Video Editing", "Graphic Design"),
+        ("Sana Ali", "sana@demo.com", "Jaipur", "Brand strategist blending research, writing, and practical growth experiments.", "Digital Marketing", "Node.js"),
+        ("Rohan Das", "rohan@demo.com", "Bhubaneswar", "Competitive programmer who makes problem solving feel less intimidating.", "C++", "English Communication"),
+        ("Aditi Kulkarni", "aditi@demo.com", "Nagpur", "Security learner sharing safe, responsible ways to build and ship software.", "Cybersecurity", "Python"),
+        ("Vikram Joshi", "vikram@demo.com", "Mysuru", "Full-stack builder and open-source contributor who likes useful tooling.", "Node.js", "Competitive Programming"),
+        ("Lina Thomas", "lina@demo.com", "Thiruvananthapuram", "Communication coach helping technical people present ideas with confidence.", "Public Speaking", "Data Science"),
+        ("Omar Sheikh", "omar@demo.com", "Lucknow", "Data scientist exploring responsible insights from real-world datasets.", "Data Science", "Figma"),
+        ("Pooja Desai", "pooja@demo.com", "Surat", "Graphic designer creating expressive visuals for small teams and communities.", "Graphic Design", "Java"),
+        ("Yash Malhotra", "yash@demo.com", "Chandigarh", "Git and delivery nerd helping teams collaborate without losing momentum.", "Git & GitHub", "Machine Learning"),
+        ("Nora Fernandes", "nora@demo.com", "Goa", "English communication partner and curious learner who brings warmth to practice.", "English Communication", "Video Editing"),
+        ("Siddharth Bose", "siddharth@demo.com", "Guwahati", "FastAPI builder interested in clean contracts, testing, and dependable services.", "FastAPI", "AWS Cloud"),
+    ]
+    category = {
+        "React": "Technology", "Python": "Technology", "Figma": "Design", "English Communication": "Communication",
+        "AWS Cloud": "Technology", "UI/UX Design": "Design", "SQL & Excel": "Business", "Public Speaking": "Communication",
+        "Machine Learning": "Technology", "Photography": "Creative", "Java": "Technology", "FastAPI": "Technology",
+        "Video Editing": "Creative", "Digital Marketing": "Business", "Graphic Design": "Design", "C++": "Technology",
+        "Cybersecurity": "Technology", "Node.js": "Technology", "Competitive Programming": "Technology", "Data Science": "Technology",
+        "Git & GitHub": "Technology",
+    }
+    users = [User(email=email, password_hash=hash_password("demo123"), full_name=name, bio=bio, location=location,
+                  profile=Profile(bio=bio, location=location))
+             for name, email, location, bio, _, _ in people]
+    db.add_all(users)
     db.commit()
-if db.query(User).count()==0:
-    users=[
-      User(email="ananya@demo.com",password_hash=hash_password("demo123"),full_name="Ananya Rao",bio="Frontend developer who loves teaching React and learning backend engineering.",location="Bengaluru"),
-      User(email="rahul@demo.com",password_hash=hash_password("demo123"),full_name="Rahul Verma",bio="Python, FastAPI and data mentor. Loves building practical projects.",location="Hyderabad"),
-      User(email="meera@demo.com",password_hash=hash_password("demo123"),full_name="Meera Nair",bio="Graphic designer and language learner.",location="Kochi"),
-      User(email="arjun@demo.com",password_hash=hash_password("demo123"),full_name="Arjun Shah",bio="Cloud learner looking for frontend practice.",location="Pune")]
-    db.add_all(users); db.commit(); [db.refresh(u) for u in users]
-    skills=[
-      Skill(owner_id=users[0].id,title="React & Frontend Mentoring",type="Offering",category="Technology",description="Learn React, component design, hooks and modern frontend patterns through practical mini projects.",tags="react, javascript, frontend, vite",level="Intermediate",availability="Weekends"),
-      Skill(owner_id=users[0].id,title="Python for Beginners",type="Requesting",category="Technology",description="Looking for a friendly Python mentor for automation and backend basics.",tags="python, backend, fastapi",level="Beginner",availability="Evenings"),
-      Skill(owner_id=users[1].id,title="Python & FastAPI Mentoring",type="Offering",category="Technology",description="Hands-on Python, FastAPI, APIs and data analysis guidance for students.",tags="python, fastapi, backend, api, data",level="Advanced",availability="Flexible"),
-      Skill(owner_id=users[1].id,title="Public Speaking Practice",type="Requesting",category="Communication",description="Want weekly practice sessions to become more confident presenting technical ideas.",tags="speaking, presentation",level="Intermediate",availability="Weekdays"),
-      Skill(owner_id=users[2].id,title="Canva & Visual Design",type="Offering",category="Design",description="Design posters, social creatives and pitch decks with Canva and basic design principles.",tags="canva, design, branding, presentation",level="Intermediate",availability="Weekends"),
-      Skill(owner_id=users[2].id,title="English Conversation",type="Requesting",category="Languages",description="Looking for conversation partners to improve fluency and confidence.",tags="english, communication, speaking",level="Beginner",availability="Flexible"),
-      Skill(owner_id=users[3].id,title="AWS Cloud Basics",type="Offering",category="Technology",description="Learn cloud fundamentals, deployment concepts and beginner AWS workflows.",tags="aws, cloud, deployment, devops",level="Intermediate",availability="Weekends"),
-      Skill(owner_id=users[3].id,title="Frontend Project Review",type="Requesting",category="Technology",description="Looking for feedback on React projects and UI architecture.",tags="react, frontend, ui, javascript",level="Beginner",availability="Evenings")]
-    db.add_all(skills); db.commit(); [db.refresh(s) for s in skills]
-    now=datetime.utcnow()
-    # A visible demo journey: accepted + completed exchanges.
-    s1=SwapRequest(requester_id=users[0].id,receiver_id=users[1].id,offered_skill_id=skills[0].id,requested_skill_id=skills[2].id,message="I can mentor React while you help me with FastAPI.",status="completed",created_at=now-timedelta(days=5))
-    s2=SwapRequest(requester_id=users[3].id,receiver_id=users[0].id,offered_skill_id=skills[6].id,requested_skill_id=skills[0].id,message="I would love a React project review in exchange for AWS basics.",status="accepted",created_at=now-timedelta(days=1))
-    s3=SwapRequest(requester_id=users[2].id,receiver_id=users[1].id,offered_skill_id=skills[4].id,requested_skill_id=skills[2].id,message="Can we exchange design feedback for Python help?",status="pending",created_at=now-timedelta(hours=5))
-    db.add_all([s1,s2,s3]); db.commit(); [db.refresh(x) for x in [s1,s2,s3]]
-    db.add_all([
-      Message(sender_id=users[0].id,receiver_id=users[1].id,body="Your FastAPI skill looks like a perfect match for my Python goal.",created_at=now-timedelta(days=4)),
-      Message(sender_id=users[1].id,receiver_id=users[0].id,body="Absolutely. I can teach FastAPI if you help me improve my React dashboard.",created_at=now-timedelta(days=4,minutes=-10)),
-      Rating(rater_id=users[0].id,rated_id=users[1].id,swap_id=s1.id,score=5,review="Clear explanations and very practical examples."),
-      Rating(rater_id=users[1].id,rated_id=users[0].id,swap_id=s1.id,score=5,review="Great React mentor and patient teacher."),
-      LearningSession(organizer_id=users[0].id,participant_id=users[1].id,swap_id=s1.id,topic="React ↔ FastAPI project sprint",scheduled_at=now-timedelta(days=2),duration_minutes=90,meeting_link="https://meet.google.com/demo",status="completed"),
-      LearningSession(organizer_id=users[3].id,participant_id=users[0].id,swap_id=s2.id,topic="AWS basics + React project review",scheduled_at=now+timedelta(days=1),duration_minutes=60,meeting_link="https://meet.google.com/demo",status="scheduled"),
-      Notification(user_id=users[1].id,title="New swap proposal",body="Meera proposed a design ↔ Python exchange.",kind="swap",read=0),
-      Notification(user_id=users[0].id,title="Learning session completed",body="Your React ↔ FastAPI session is complete. Leave a rating to build trust.",kind="session",read=0)
-    ]); db.commit()
-print("Demo seed complete.")
-print("Ananya: ananya@demo.com / demo123")
-print("Rahul:  rahul@demo.com / demo123")
-print("Meera:  meera@demo.com / demo123")
-print("Arjun:  arjun@demo.com / demo123")
+    for user in users:
+        db.refresh(user)
+
+    skills = []
+    levels = ["Intermediate", "Advanced", "Intermediate", "Beginner"]
+    for index, (user, person) in enumerate(zip(users, people)):
+        offering, requesting = person[-2:]
+        skills.extend([
+            Skill(owner_id=user.id, title=offering, type="Offering", category=category[offering],
+                  description=f"A practical, friendly exchange around {offering.lower()}, with examples shaped to your goals.",
+                  tags=offering.lower().replace(" & ", ", ").replace(" ", ","), level=levels[index % 4], availability="Weekend mornings"),
+            Skill(owner_id=user.id, title=requesting, type="Requesting", category=category[requesting],
+                  description=f"Looking for a peer who can help me build confidence in {requesting.lower()} through a focused project.",
+                  tags=requesting.lower().replace(" & ", ", ").replace(" ", ","), level="Beginner", availability="Flexible"),
+        ])
+    catalogs = {}
+    for skill in skills:
+        key = (skill.title, skill.category)
+        if key not in catalogs:
+            catalogs[key] = SkillCatalog(name=skill.title, category=skill.category)
+            db.add(catalogs[key])
+        skill.catalog = catalogs[key]
+    db.add_all(skills)
+    db.commit()
+    for skill in skills:
+        db.refresh(skill)
+
+    offers, goals = skills[::2], skills[1::2]
+    now = datetime.utcnow()
+    swaps = []
+    for index in range(10):
+        requester, receiver = users[index], users[(index + 1) % len(users)]
+        status = ["completed", "completed", "accepted", "pending", "completed"][index % 5]
+        requested = goals[(index + 1) % len(goals)]
+        swaps.append(SwapRequest(requester_id=requester.id, receiver_id=receiver.id, offered_skill_id=offers[index].id,
+                     requested_skill_id=requested.id,
+                     message=f"I can share {offers[index].title} in exchange for your {requested.title} perspective.",
+                                 status=status, created_at=now - timedelta(days=10 - index)))
+    db.add_all(swaps)
+    db.commit()
+    for swap in swaps:
+        db.refresh(swap)
+
+    completed = [swap for swap in swaps if swap.status == "completed"]
+    accepted = [swap for swap in swaps if swap.status in {"accepted", "completed"}]
+    for swap in accepted:
+        one, two = sorted((swap.requester_id, swap.receiver_id))
+        conversation = Conversation(participant_one_id=one, participant_two_id=two)
+        db.add(conversation)
+        db.flush()
+        db.add_all([
+            Message(conversation_id=conversation.id, sender_id=swap.requester_id, receiver_id=swap.receiver_id,
+                    body=f"Your {swap.requested_skill.title} goal looks like a great match. Shall we find a time?",
+                    created_at=swap.created_at + timedelta(hours=2)),
+            Message(conversation_id=conversation.id, sender_id=swap.receiver_id, receiver_id=swap.requester_id,
+                    body="Absolutely. I am excited to learn together.", created_at=swap.created_at + timedelta(hours=3)),
+        ])
+    for swap in completed:
+        db.add_all([
+            Rating(rater_id=swap.requester_id, rated_id=swap.receiver_id, swap_id=swap.id, score=5,
+                   review="Clear, generous, and practical. I left with something I could use immediately."),
+            Rating(rater_id=swap.receiver_id, rated_id=swap.requester_id, swap_id=swap.id, score=4,
+                   review="A thoughtful exchange with great questions and follow-through."),
+            LearningSession(organizer_id=swap.requester_id, participant_id=swap.receiver_id, swap_id=swap.id,
+                            topic=f"{swap.offered_skill.title} exchange", scheduled_at=now - timedelta(days=6),
+                            duration_minutes=60, meeting_link="", status="completed"),
+        ])
+    for swap in accepted[:3]:
+        db.add(LearningSession(organizer_id=swap.receiver_id, participant_id=swap.requester_id, swap_id=swap.id,
+                               topic=f"Next steps: {swap.requested_skill.title}", scheduled_at=now + timedelta(days=1 + swap.id),
+                               duration_minutes=60, meeting_link="", status="scheduled"))
+    for index, user in enumerate(users):
+        db.add(Notification(user_id=user.id, title="Your next exchange is close", kind="match", read=index % 3 == 0,
+                            body="We found a complementary skill in the community. Explore your recommendations."))
+    db.add(Notification(user_id=users[0].id, title="Session complete", kind="session", read=False,
+                        body="Your exchange is complete. Leave a review to help your partner build trust."))
+    db.commit()
+    print("Demo seed complete: 20 users, 40 skills, exchanges, conversations, sessions, ratings, and notifications.")
+    print("Learner: ananya@demo.com / demo123")
+    print("Mentor:  rahul@demo.com / demo123")
+finally:
+    db.close()

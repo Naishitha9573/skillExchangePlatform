@@ -89,6 +89,14 @@ try:
         for page in pages:
             page.on('pageerror', lambda error: errors.append(str(error)))
         alex, jordan, outsider = pages
+        alex.goto(WEB + '/register')
+        alex.get_by_label('Full name', exact=True).fill('First Exchange Learner')
+        alex.get_by_label('Email address').fill('first-exchange@example.com')
+        alex.get_by_label('Password', exact=True).fill(password)
+        alex.get_by_role('button', name='Create account', exact=True).click()
+        alex.wait_for_url('**/dashboard')
+        alex.get_by_role('button', name='Open navigation', exact=True).click()
+        alex.get_by_role('button', name='Sign out', exact=True).click()
         for page, account in zip(pages, accounts):
             page.goto(WEB + '/login')
             page.get_by_label('Email address').fill(account['user']['email'])
@@ -96,12 +104,27 @@ try:
             page.get_by_role('button', name='Sign in', exact=True).click()
             page.wait_for_url('**/dashboard')
 
+        alex.goto(WEB + '/profile')
+        alex.get_by_label('Location', exact=True).fill('Bengaluru')
+        alex.get_by_label('Bio', exact=False).fill('I enjoy practical peer learning and thoughtful feedback.')
+        alex.get_by_role('button', name='Save profile', exact=True).click()
+        expect(alex.get_by_text('Your profile is up to date.')).to_be_visible()
         alex.goto(WEB + '/add-skill')
         alex.get_by_label('Skill title').fill('React mentoring')
         alex.get_by_label('Description').fill('Build a practical React component with me.')
         alex.get_by_role('button',name='Publish skill').click()
         alex.wait_for_url('**/dashboard')
+        alex.goto(WEB + '/add-skill?type=Requesting')
+        alex.get_by_label('Skill title').fill('Python')
+        alex.get_by_label('Description').fill('I want to learn how to build a practical Python program.')
+        expect(alex.get_by_role('combobox', name='I am', exact=True)).to_have_value('Requesting')
+        alex.get_by_role('button', name='Publish skill').click()
+        alex.wait_for_url('**/dashboard')
         python_skill = request('POST','/skills',accounts[1]['access_token'],{'title':'Python fundamentals','type':'Offering','category':'Technology','description':'Build your first practical Python program.'})
+        alex.goto(WEB + '/feed?search=Python')
+        expect(alex.locator('.skillcard h3', has_text='Python fundamentals')).to_be_visible()
+        assert request('GET','/recommendations',accounts[0]['access_token'])
+        before_xp = request('GET','/dashboard',accounts[0]['access_token'])['xp']
         alex.goto(WEB + f"/skill/{python_skill['id']}")
         alex.get_by_label('Your offered skill').select_option(label='React mentoring')
         alex.get_by_label('A friendly introduction').fill('Let’s learn together!')
@@ -201,8 +224,9 @@ try:
         alex.get_by_label('Your reflection (optional)').fill('A thoughtful session with clear examples.')
         alex.get_by_role('button',name='Share review').click()
         expect(alex.get_by_text('Review shared',exact=True)).to_be_visible()
+        assert request('GET','/dashboard',accounts[0]['access_token'])['xp'] > before_xp
 
-        for width in (390,768,1440):
+        for width in (390,430,768,1024,1280,1440):
             alex.set_viewport_size({'width':width,'height':900})
             for route in ('/','/sessions',f"/messages/{accounts[1]['user']['id']}",'/swaps','/profile','/feed'):
                 alex.goto(WEB + route)

@@ -126,7 +126,7 @@ export default function Swaps() {
         <div>
           <div className="eyebrow"><ArrowRightLeft size={15}/> Exchange center</div>
           <h1>Your skill swaps</h1>
-          <p>Track proposals, accepted exchanges and completed connections.</p>
+          <p>One good exchange can be the start of something bigger. Keep your next step in view.</p>
         </div>
         <button className="ghost small" onClick={load} disabled={refreshing||loading}>
           <RefreshCw size={15} className={refreshing ? 'spin' : ''}/>
@@ -142,9 +142,10 @@ export default function Swaps() {
       )}
       {success && <div className="successbox"><Check size={16}/><span>{success}</span></div>}
 
-      <div className="swap-tabs card">
+      <div className="swap-guidance"><div><b>01</b><span><strong>Find a shared goal</strong><small>Send or accept a skill proposal</small></span></div><div><b>02</b><span><strong>Make a plan together</strong><small>Message, schedule, and meet</small></span></div><div><b>03</b><span><strong>Keep growing</strong><small>Complete your exchange and reflect</small></span></div></div>
+      <div className="swap-tabs card" aria-label="Filter exchanges">
         {STATUS_TABS.map(([value,label]) => (
-          <button key={value} className={tab===value?'active':''} onClick={() => setTab(value)}>
+          <button key={value} aria-pressed={tab===value} className={tab===value?'active':''} onClick={() => setTab(value)}>
             {label}<b>{counts[value]||0}</b>
           </button>
         ))}

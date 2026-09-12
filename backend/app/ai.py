@@ -93,11 +93,12 @@ def match_reasons(source,target,result,context=None):
     context=context or {}
     reasons=[]
     if source.type=="Requesting" and target.type=="Offering":
-        reasons.append(f"{target.owner.full_name if getattr(target,'owner',None) else 'This member'} teaches {target.title} while you want to learn it.")
+        reasons.append(f"{target.owner.full_name if getattr(target,'owner',None) else 'This member'} teaches {target.title}; your learning goal is {source.title}.")
     elif source.type=="Offering" and target.type=="Requesting":
-        reasons.append(f"You can teach {source.title}, which {target.owner.full_name if getattr(target,'owner',None) else 'this member'} wants to learn.")
+        reasons.append(f"You offer {source.title}; {target.owner.full_name if getattr(target,'owner',None) else 'this member'} wants to learn {target.title}.")
     if result["breakdown"]["skill_level_fit"]>=72:
-        reasons.append(f"Level fit: {target.level} teaching for a {source.level} goal.")
+        teacher, learner = (target, source) if target.type == "Offering" else (source, target)
+        reasons.append(f"Level fit: {teacher.level} teaching for a {learner.level} goal.")
     if result["breakdown"]["content_compatibility"]>=55:
         reasons.append(f"Related focus across {source.category} and {target.category}.")
     if result["breakdown"]["reputation"]>50:

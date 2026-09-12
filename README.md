@@ -1,5 +1,16 @@
 # 🚀 Skill Exchange Platform
 
+## Local demo
+
+From the repository root, run `backend\..\.test-venv\Scripts\python.exe backend\seed.py --reset` or, with an activated backend environment, `cd backend && python seed.py --reset`. The seed is explicit and idempotent: it creates 20 fictional users plus skills, swaps, conversations, sessions, ratings, and notifications. It never runs during application startup.
+
+Demo accounts use the development-only password `demo123`:
+
+- Learner: `ananya@demo.com`
+- Mentor: `rahul@demo.com`
+
+Google sign-in remains optional. Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `backend/.env` to enable it; email login works without those values.
+
 A full-stack web application that helps users **learn, teach, share, and exchange skills** with other users. The platform connects learners with people who have the skills they want to learn, creating opportunities for peer-to-peer learning and collaboration.
 
 ---
