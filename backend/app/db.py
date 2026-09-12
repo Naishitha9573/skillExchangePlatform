@@ -1,10 +1,13 @@
 from datetime import datetime
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 from app.core.config import settings
 
-connect_args = {"check_same_thread": False, "timeout": 30} if settings.DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(settings.DATABASE_URL, connect_args=connect_args)
+if settings.DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False, "timeout": 30})
+else:
+    engine = create_engine(settings.DATABASE_URL, poolclass=NullPool)
 
 if settings.DATABASE_URL.startswith("sqlite"):
     @event.listens_for(engine, "connect")
