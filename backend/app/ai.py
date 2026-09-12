@@ -1,5 +1,6 @@
-import json, os, re, urllib.request
+import json, re, urllib.request
 from collections import Counter
+from app.core.config import settings
 
 STOP={"the","and","for","with","from","this","that","learn","learning","skill","skills","a","an","to","of","in","on","is","are","i","you","want","looking","become","good"}
 
@@ -23,14 +24,14 @@ def explanation(source,target):
     return "Potential match based on complementary skills and learning goals."
 
 def _gemini_key():
-    return os.getenv("GEMINI_API_KEY", "").strip()
+    return settings.GEMINI_API_KEY.strip()
 
 def gemini_json(prompt):
     """Optional live LLM layer. Returns None when no key/network is configured."""
     key=_gemini_key()
     if not key:
         return None
-    model=os.getenv("GEMINI_MODEL","gemini-2.5-flash")
+    model=settings.GEMINI_MODEL
     url=f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
     body={"contents":[{"parts":[{"text":prompt}]}],"generationConfig":{"responseMimeType":"application/json","temperature":0.2}}
     req=urllib.request.Request(url,data=json.dumps(body).encode(),headers={"Content-Type":"application/json"},method="POST")

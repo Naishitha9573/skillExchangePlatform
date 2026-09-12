@@ -1,4 +1,5 @@
-import os
+import secrets
+import httpx
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
@@ -7,7 +8,7 @@ from app.core.config import settings
 from app.db import Base, engine, get_db
 from app.models import Conversation, LearningSession, Message, Notification, Profile, Rating, Skill, SkillCatalog, SwapRequest, User
 from app.schemas import *
-from app.auth import hash_password, verify_password, create_token, current_user
+from app.auth import hash_password, verify_password, create_token, create_oauth_state, verify_oauth_state, current_user
 from app.ai import match_score, explanation, live_match_analysis
 
 from app.db import initialize_database
@@ -36,7 +37,7 @@ def health(): return {"status":"healthy"}
 
 @app.post("/api/v1/auth/register",response_model=Token)
 def register(data:UserCreate,db:Session=Depends(get_db)):
-    if db.query(User).filter(User.email==data.email).first(): raise HTTPException(400,"Email already registered")
+    if db.query(User).filter(func.lower(User.email)==data.email).first(): raise HTTPException(409,"Email already registered")
     u=User(email=data.email,password_hash=hash_password(data.password),full_name=data.full_name,location=data.location,profile=Profile(location=data.location))
     db.add(u); db.commit(); db.refresh(u)
     return {"access_token":create_token(u.id),"user":u}
@@ -45,6 +46,44 @@ def login(data:Login,db:Session=Depends(get_db)):
     u=db.query(User).filter(User.email==data.email).first()
     if not u or not verify_password(data.password,u.password_hash): raise HTTPException(401,"Invalid email or password")
     return {"access_token":create_token(u.id),"user":u}
+
+@app.get("/api/v1/auth/google/authorize")
+def google_authorize():
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(503,"Google sign-in requires GOOGLE_CLIENT_ID in backend/.env")
+    if not settings.GOOGLE_REDIRECT_URI:
+        raise HTTPException(503,"Google sign-in requires GOOGLE_REDIRECT_URI in backend/.env")
+    from urllib.parse import urlencode
+    params={"client_id":settings.GOOGLE_CLIENT_ID,"redirect_uri":settings.GOOGLE_REDIRECT_URI,"response_type":"code","scope":"openid email profile","state":create_oauth_state(),"access_type":"offline","prompt":"select_account"}
+    return {"authorization_url":"https://accounts.google.com/o/oauth2/v2/auth?"+urlencode(params)}
+
+@app.post("/api/v1/auth/google/callback",response_model=Token)
+def google_callback(data:GoogleCallback,db:Session=Depends(get_db)):
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET or not settings.GOOGLE_REDIRECT_URI:
+        raise HTTPException(503,"Google sign-in requires GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URI in backend/.env")
+    try:
+        verify_oauth_state(data.state)
+    except Exception:
+        raise HTTPException(400,"Google sign-in session expired or is invalid")
+    try:
+        with httpx.Client(timeout=10) as client:
+            token_response=client.post("https://oauth2.googleapis.com/token",data={"code":data.code,"client_id":settings.GOOGLE_CLIENT_ID,"client_secret":settings.GOOGLE_CLIENT_SECRET,"redirect_uri":settings.GOOGLE_REDIRECT_URI,"grant_type":"authorization_code"})
+            token_response.raise_for_status()
+            access_token=token_response.json().get("access_token")
+            if not access_token: raise ValueError("Missing Google access token")
+            profile_response=client.get("https://openidconnect.googleapis.com/v1/userinfo",headers={"Authorization":f"Bearer {access_token}"})
+            profile_response.raise_for_status()
+            profile=profile_response.json()
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(400,"Google could not verify your account")
+    email=str(profile.get("email","")).strip().lower()
+    if not email or profile.get("email_verified") is not True: raise HTTPException(400,"Google account email is not verified")
+    user=db.query(User).filter(func.lower(User.email)==email).first()
+    if not user:
+        name=str(profile.get("name") or email.split("@")[0]).strip()[:120]
+        user=User(email=email,password_hash=hash_password(secrets.token_urlsafe(32)),full_name=name,avatar_url=profile.get("picture","") or "",profile=Profile(avatar_url=profile.get("picture","") or ""))
+        db.add(user); db.commit(); db.refresh(user)
+    return {"access_token":create_token(user.id),"user":user}
 @app.get("/api/v1/users/me",response_model=UserOut)
 def me(user:User=Depends(current_user)): return user
 @app.put("/api/v1/users/me",response_model=UserOut)
@@ -340,7 +379,7 @@ def judge_summary(user:User=Depends(current_user),db:Session=Depends(get_db)):
     hours=round(sum((x.duration_minutes or 60)/60 for x in sessions),1)
     ratings=db.query(Rating).all()
     avg=round(sum(x.score for x in ratings)/len(ratings),1) if ratings else 0
-    return {"users":total_users,"skills":total_skills,"swaps":total_swaps,"completed_swaps":completed,"learning_hours":hours,"average_rating":avg,"ai_provider":"Gemini" if os.getenv("GEMINI_API_KEY") else "Local semantic matcher","demo_accounts":[{"email":"ananya@demo.com","password":"demo123","story":"React mentor → Python learner"},{"email":"rahul@demo.com","password":"demo123","story":"Python mentor → React learner"}],"demo_flow":["Discover","AI Match","Swap","Message","Schedule","Learn","Complete","Rate"]}
+    return {"users":total_users,"skills":total_skills,"swaps":total_swaps,"completed_swaps":completed,"learning_hours":hours,"average_rating":avg,"ai_provider":"Gemini" if settings.GEMINI_API_KEY else "Local semantic matcher","demo_accounts":[{"email":"ananya@demo.com","password":"demo123","story":"React mentor → Python learner"},{"email":"rahul@demo.com","password":"demo123","story":"Python mentor → React learner"}],"demo_flow":["Discover","AI Match","Swap","Message","Schedule","Learn","Complete","Rate"]}
 
 @app.get("/api/v1/challenges")
 def challenges(user:User=Depends(current_user)):

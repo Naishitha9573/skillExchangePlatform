@@ -11,7 +11,7 @@ class User(Base, TimestampMixin):
     __tablename__ = "users"
     id=Column(Integer, primary_key=True)
     email=Column(String(255), unique=True, nullable=False, index=True)
-    password_hash=Column(String(255), nullable=False)
+    password_hash=Column(String(255), nullable=True)
     full_name=Column(String(120), nullable=False)
     bio=Column(Text, default="")
     location=Column(String(120), default="")
