@@ -72,7 +72,7 @@ class SwapRequest(Base, TimestampMixin):
     __table_args__=(
         CheckConstraint("requester_id != receiver_id", name="ck_swap_distinct_users"),
         CheckConstraint("status IN ('pending','accepted','rejected','cancelled','completed')", name="ck_swap_status"),
-        Index("ix_swap_pending_pair", "requester_id", "requested_skill_id", unique=True, sqlite_where=(status == "pending")),
+        Index("ix_swap_pending_pair", "requester_id", "requested_skill_id", unique=True, sqlite_where=(status == "pending"), postgresql_where=(status == "pending")),
     )
 
 class Conversation(Base, TimestampMixin):
@@ -95,9 +95,15 @@ class Message(Base, TimestampMixin):
     sender_id=Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     receiver_id=Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)
     body=Column(Text, nullable=False)
+    read_at=Column(DateTime, nullable=True)
+    client_id=Column(String(36), nullable=True)
     sender=relationship("User", foreign_keys=[sender_id])
     receiver=relationship("User", foreign_keys=[receiver_id])
     conversation=relationship("Conversation", back_populates="messages")
+    __table_args__=(
+        Index("uq_message_sender_client", "sender_id", "client_id", unique=True),
+        Index("ix_message_unread", "conversation_id", "receiver_id", "read_at"),
+    )
 
 class Rating(Base, TimestampMixin):
     __tablename__="ratings"

@@ -3,3 +3,12 @@ backend/*.db
 backend/__pycache__/
 frontend/node_modules/
 frontend/dist/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+**/__pycache__/
+**/*.py[cod]
+backend/venv/
+.test-venv/
+.artifacts/
+**/.pytest_cache/
