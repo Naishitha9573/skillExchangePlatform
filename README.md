@@ -218,6 +218,12 @@ The project includes:
 
 ### Development Tools
 
+## Database Notes
+
+The backend keeps the existing `/api/v1/skills` response contract while storing reusable skill names in `skill_catalog` and user-specific offers or learning goals in `skills`. Profiles and ordered user conversations are separate relational entities, and swap, session, rating, and notification records use foreign keys, status checks, indexes, and timestamps.
+
+On startup, `backend/app/db.py` creates new tables and performs an idempotent additive upgrade for the original SQLite database. Existing skill rows, profile fields, and direct messages are preserved and backfilled into the catalog, profiles, and conversations tables. For production, run this upgrade during deployment and take a database backup first; the current compatibility columns on `users` and `skills` should be retained until all clients have moved to the normalized relationships.
+
 - Git
 - GitHub
 - Visual Studio Code
