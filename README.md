@@ -1,5 +1,71 @@
 # 🚀 Skill Exchange Platform
 
+## Local demo
+
+From the repository root, run `backend\..\.test-venv\Scripts\python.exe backend\seed.py --reset` or, with an activated backend environment, `cd backend && python seed.py --reset`. The seed is explicit and idempotent: it creates 20 fictional users plus skills, swaps, conversations, sessions, ratings, and notifications. It never runs during application startup.
+
+Demo accounts use the development-only password `demo123`:
+
+- Learner: `ananya@demo.com`
+- Mentor: `rahul@demo.com`
+
+Google sign-in remains optional. Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `backend/.env` to enable it; email login works without those values.
+
+## Deployment
+
+SkillSwap is prepared for two Vercel projects backed by Supabase PostgreSQL.
+
+### 1. Backend project
+
+Create a Vercel project from this repository with **Root Directory = `backend`**. Vercel uses [backend/index.py](backend/index.py), which imports the existing FastAPI app without starting Uvicorn.
+
+Configure these backend environment variables:
+
+```text
+DATABASE_URL=<Supabase Transaction Pooler connection string>
+SECRET_KEY=<random secret of at least 32 characters>
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+CORS_ORIGINS=<frontend Vercel URL>
+GEMINI_API_KEY=<optional>
+GEMINI_MODEL=gemini-2.5-flash
+DEMO_MODE=false
+```
+
+Use the Supabase **Transaction Pooler** URL for `DATABASE_URL`. PostgreSQL connections use SQLAlchemy `NullPool`; local SQLite development continues to use its existing SQLite configuration.
+
+### 2. Frontend project
+
+Create a second Vercel project from the same repository with **Root Directory = `frontend`**. Configure:
+
+```text
+VITE_API_URL=https://BACKEND_DOMAIN/api/v1
+```
+
+`frontend/vercel.json` provides the SPA fallback required by React Router routes such as `/dashboard`, `/profile`, `/messages`, and `/sessions`. The frontend derives its WebSocket URL from `VITE_API_URL`, using `wss://` for HTTPS deployments.
+
+### Deployment order
+
+1. Deploy the backend project.
+2. Copy its Vercel URL.
+3. Set the frontend `VITE_API_URL` to `https://BACKEND_DOMAIN/api/v1`.
+4. Deploy the frontend project.
+5. Copy the frontend Vercel URL.
+6. Set backend `CORS_ORIGINS` to the frontend URL, for example `https://your-app.vercel.app`.
+7. Redeploy the backend.
+8. Test registration, login, discovery, swaps, messaging, sessions, video, reviews, and notifications.
+
+### Demo data
+
+Demo data is never created during application startup. For a development or demo database only, run from the repository root:
+
+```text
+python backend/seed.py --reset
+```
+
+Do not run `--reset` against a production database. The seed creates 20 fictional users and related skills, swaps, conversations, sessions, ratings, and notifications.
+
+For production schema initialization, the backend import creates tables through SQLAlchemy. Take a database backup and validate the Supabase connection before using a production deployment.
+
 A full-stack web application that helps users **learn, teach, share, and exchange skills** with other users. The platform connects learners with people who have the skills they want to learn, creating opportunities for peer-to-peer learning and collaboration.
 
 ---

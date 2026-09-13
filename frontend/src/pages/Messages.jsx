@@ -107,6 +107,7 @@ export default function Messages(){
       </aside>
       <section className="inbox-chat" aria-label="Conversation">{otherId?<>
         <header className="chat-header"><button className="ghost icon-button mobile-chat-back" aria-label="Back to conversations" onClick={()=>navigate('/messages')}><ArrowLeft size={20}/></button><span className="avatar">{partner?.full_name?.[0]||'?'}</span><div className="chat-person"><strong>{partner?.full_name||'Conversation'}</strong><small>Your shared space to make progress</small></div>{conversation&&<Link className="button secondary small" to={`/sessions?user=${otherId}`}><CalendarDays size={15}/><span>Schedule</span></Link>}</header>
+        {partners.find(p=>String(p.partner.id)===otherId)&&<div className="chat-exchange-context"><span>Your exchange</span><strong>{partners.find(p=>String(p.partner.id)===otherId).topics.join(' ↔ ')}</strong><Link to={`/members/${otherId}`}>View profile</Link></div>}
         <div className="chat-scroll" ref={scroll} onScroll={()=>{const el=scroll.current;pinned.current=el.scrollHeight-el.scrollTop-el.clientHeight<100;}}>
           {chatLoading?<div className="loading" role="status">Loading conversation…</div>:<>
             {older&&<button className="ghost small history-button" disabled={historyLoading} onClick={loadOlder}>{historyLoading?'Loading…':'Load earlier messages'}</button>}

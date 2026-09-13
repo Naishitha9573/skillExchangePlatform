@@ -12,6 +12,7 @@ from app.auth import hash_password, verify_password, create_token, create_oauth_
 from app.ai import match_score, explanation, live_match_analysis, tokens, hybrid_match, match_reasons
 
 from app.collaboration import router as collaboration_router, conversation_for, notify, utc_iso
+from app.community import router as community_router
 from app.realtime import router as realtime_router, hub
 from app.db import initialize_database
 initialize_database()
@@ -19,6 +20,7 @@ app=FastAPI(title=settings.PROJECT_NAME, version="1.0.0", description="AI-powere
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins,allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
 
 app.include_router(collaboration_router)
+app.include_router(community_router)
 app.include_router(realtime_router)
 
 def skill_out(s):
@@ -48,6 +50,18 @@ def recommendation_row(source,target,context):
 def root(): return {"name":settings.PROJECT_NAME,"status":"online","docs":"/docs"}
 @app.get("/health")
 def health(): return {"status":"healthy"}
+
+@app.get("/api/v1/community/summary")
+def community_summary(db:Session=Depends(get_db)):
+    completed_sessions=db.query(LearningSession).filter(LearningSession.status=="completed").all()
+    return {
+        "people": db.query(User).count(),
+        "skills": db.query(Skill).count(),
+        "teaching_skills": db.query(Skill).filter(Skill.type == "Offering").count(),
+        "learning_goals": db.query(Skill).filter(Skill.type == "Requesting").count(),
+        "demo": settings.DEMO_MODE,
+        "learning_hours": round(sum((session.duration_minutes or 60) for session in completed_sessions) / 60, 1),
+    }
 
 @app.post("/api/v1/auth/register",response_model=Token)
 def register(data:UserCreate,db:Session=Depends(get_db)):

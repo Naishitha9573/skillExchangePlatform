@@ -1,159 +1,67 @@
-import {useEffect,useRef} from 'react';
+import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
-import {ArrowRight,ArrowUpRight,BrainCircuit,Check,Compass,Handshake,Layers3,ShieldCheck,Sparkles,Video} from 'lucide-react';
+import {ArrowRight,ArrowUpRight,ArrowRightLeft,BookOpen,CalendarDays,Camera,Check,ChevronDown,Code2,Compass,GraduationCap,Handshake,Heart,MessageCircle,Palette,ShieldCheck,Target,TrendingUp,Users} from 'lucide-react';
 import AnimatedCounter from '../components/AnimatedCounter';
+import ExchangeVisual from '../components/ExchangeVisual';
+import MemberCard,{Avatar} from '../components/MemberCard';
+import ProductPreview,{productFeatures} from '../components/ProductPreview';
+import {SkeletonCard} from '../components/Skeleton';
+import {useAuth} from '../context/AuthContext';
+import useReveal from '../hooks/useReveal';
+import api from '../services/api';
 
-function useReveal() {
-  const ref = useRef(null);
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      entries => entries.forEach(entry => {
-        if (entry.isIntersecting) entry.target.classList.add('visible');
-      }),
-      { threshold: 0.15 }
-    );
-    ref.current?.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-  return ref;
+const categoryIcons={Technology:Code2,Design:Palette,Creative:Camera,Communication:MessageCircle,Business:TrendingUp,Languages:BookOpen};
+const steps=[['Create your profile','A little about you. A lot of possibility.',Users],['Share what you can teach','Practical skills, personal passions, real experience.',GraduationCap],['Choose what to learn','Give your curiosity a direction.',Target],['Discover smart matches','Find people whose strengths meet your goals.',Compass],['Connect and schedule','Start a conversation. Put a time on the calendar.',CalendarDays],['Exchange skills and grow','Meet, practice, reflect, and do it again.',TrendingUp]];
+const faqs=[
+  ['What is SkillSwap?','SkillSwap is a community for exchanging knowledge. Share a skill you can teach, add something you want to learn, and find people to grow with through a two-way exchange.'],
+  ['Does it cost money to exchange a skill?','SkillSwap has no payment or tutoring checkout. Members exchange their time and knowledge. Agree on the scope and time commitment with your partner before you begin.'],
+  ['How are matches recommended?','Recommendations compare your teaching skills and learning goals with other members. Skill relevance, experience levels, opportunities to learn from each other, reviews, and available exchange history help explain the fit.'],
+  ['Can I message another member?','Yes. After proposing a swap, you can open a conversation with that member. Messages stay in SkillSwap so you can return to your learning plans.'],
+  ['Can I schedule a learning session?','Once a swap is accepted, either partner can book a session. Choose a topic, a date, and a duration. Times appear in your local time zone, and the schedule checks for overlapping sessions.'],
+  ['Can we meet through video?','Yes. Scheduled sessions include a private video room for you and your partner. Join from your Sessions page starting 15 minutes before your scheduled time.'],
+  ['How do reviews work?','After completing an exchange, each participant can leave one rating and a written reflection. Received reviews appear on the member’s profile and contribute to their reputation.'],
+];
+function SectionHeading({kicker,title,children,link,action}) {
+  return <div className="landing-section-head" data-reveal><div><span className="section-kicker">{kicker}</span><h2>{title}</h2>{children&&<p>{children}</p>}</div>{link&&<Link className="text-link" to={link}>{action} <ArrowUpRight size={17}/></Link>}</div>;
 }
-
 export default function Landing() {
-  const root = useReveal();
-
-  return (
-    <main className="landing premium-landing" ref={root}>
-      <section className="premium-hero">
-        <div className="hero-copy">
-          <div className="eyebrow"><Sparkles size={15}/> The peer learning network</div>
-          <h1>Learn openly.<br/><em>Teach generously.</em></h1>
-          <p>SkillSwap turns the skills you have into the skills you need. Find a person, trade knowledge, and grow together without a price tag.</p>
-          <div className="heroactions">
-            <Link className="button" to="/register">Get started <ArrowRight size={18}/></Link>
-            <Link className="button secondary" to="/feed">Explore skills <Compass size={17}/></Link>
-          </div>
-          <div className="hero-proof">
-            <span className="proof-avatars"><i>AM</i><i>JR</i><i>SK</i></span>
-            <span>
-              <strong>Built for curious people</strong>
-              <small>No money. Just momentum.</small>
-            </span>
-          </div>
-        </div>
-
-        <div className="hero-visual">
-          {/* Animated gradient orbs */}
-          <div className="hero-orb hero-orb-1" aria-hidden="true" />
-          <div className="hero-orb hero-orb-2" aria-hidden="true" />
-
-          <div className="orbit orbit-one" />
-          <div className="orbit orbit-two" />
-
-          <div className="match-card">
-            <div className="match-label"><span className="live-dot" /> A great exchange is forming</div>
-            <div className="person-row">
-              <div className="portrait portrait-a">AM</div>
-              <div><strong>Alex teaches</strong><span>Product strategy</span></div>
-              <span className="match-line"><Check size={14}/></span>
-              <div className="portrait portrait-b">JR</div>
-              <div><strong>Jordan learns</strong><span>React fundamentals</span></div>
-            </div>
-            <div className="match-footer">
-              <span><ShieldCheck size={14}/> A shared learning goal</span>
-              <b>Example exchange</b>
-            </div>
-          </div>
-
-          <div className="floating-note note-top">
-            <Layers3 size={16}/>
-            <span><strong>Live conversations</strong><small>learning stays here</small></span>
-          </div>
-          <div className="floating-note note-bottom">
-            <Video size={16}/>
-            <span><strong>Next session</strong><small>Design critique · Today</small></span>
-          </div>
-        </div>
-      </section>
-
-      <section className="value-strip" id="how-it-works">
-        <div className="reveal">
-          <span className="value-number">01</span>
-          <strong>Bring what you know</strong>
-          <small>Teach a skill you are proud of.</small>
-        </div>
-        <div className="reveal delay-1">
-          <span className="value-number">02</span>
-          <strong>Find your next unlock</strong>
-          <small>Discover people who fill the gap.</small>
-        </div>
-        <div className="reveal delay-2">
-          <span className="value-number">03</span>
-          <strong>Make progress together</strong>
-          <small>Swap time, not money.</small>
-        </div>
-      </section>
-
-      {/* Community stats with animated counters */}
-      <section className="story-section" id="why-skillswap">
-        <div className="community-stats reveal">
-          <div className="community-stat">
-            <strong><AnimatedCounter to={500} suffix="+" /></strong>
-            <span>Skills exchanged</span>
-          </div>
-          <div className="community-stat">
-            <strong><AnimatedCounter to={120} suffix="+" /></strong>
-            <span>Active learners</span>
-          </div>
-          <div className="community-stat">
-            <strong><AnimatedCounter to={850} suffix="h" /></strong>
-            <span>Time spent learning</span>
-          </div>
-        </div>
-
-        <div className="section-kicker reveal" style={{marginTop: 65}}>A better kind of marketplace</div>
-        <div className="story-heading reveal">
-          <h2>Knowledge moves further<br/><em>when it moves both ways.</em></h2>
-          <p>From first hello to finished session, every part of SkillSwap is designed to make peer learning feel human, focused, and worth returning to.</p>
-        </div>
-
-        <div className="feature-grid">
-          <Feature I={BrainCircuit} t="Find your people" d="Smart matching surfaces complementary skills, goals, and learning styles." />
-          <Feature I={Handshake} t="Exchange with intention" d="Say hello, book a time, and learn face to face in your own private video room." />
-          <Feature I={ShieldCheck} t="Build trusted reputation" d="Complete learning sessions, share thoughtful reviews, and see your progress grow." />
-        </div>
-
-        <div className="landing-loop reveal">
-          <div className="section-kicker">From first hello to your next breakthrough</div>
-          <h3>Your whole exchange. One place.</h3>
-          <p>No scattered messages or meeting links. Stay connected from the first match to the moment it clicks.</p>
-          <div className="workflow-steps">
-            {['Discover','Match','Swap','Message','Schedule','Video & learn','Complete','Review'].map((step,i) => (
-              <span key={step}><b>0{i+1}</b>{step}</span>
-            ))}
-          </div>
-        </div>
-
-        <div className="landing-cta reveal">
-          <div>
-            <div className="eyebrow"><Sparkles size={15}/> Your next skill is out there</div>
-            <h2>Enter SkillSwap and start<br/>your first exchange.</h2>
-          </div>
-          <Link className="button light-button" to="/register">Create your profile <ArrowUpRight size={18}/></Link>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function Feature({I,t,d}) {
-  return (
-    <article className="premium-feature reveal">
-      <div className="feature-icon"><I size={19}/></div>
-      <div>
-        <h3>{t}</h3>
-        <p>{d}</p>
-      </div>
-      <ArrowUpRight className="feature-arrow" size={17}/>
-    </article>
-  );
+  const {user}=useAuth();
+  const [summary,setSummary]=useState(null),[members,setMembers]=useState([]),[popular,setPopular]=useState([]),[recommendations,setRecommendations]=useState([]);
+  const [loading,setLoading]=useState(true),[failed,setFailed]=useState([]),[retry,setRetry]=useState(0),[category,setCategory]=useState('All'),[active,setActive]=useState('matching'),[faq,setFaq]=useState(0);
+  const root=useReveal(loading);
+  useEffect(()=>{
+    const controller=new AbortController();setLoading(true);setFailed([]);
+    const paths=['/community/summary','/community/members?limit=8','/community/popular-skills?limit=40'];
+    if(user)paths.push('/recommendations');
+    Promise.allSettled(paths.map(path=>api.get(path,{signal:controller.signal}))).then(results=>{
+      if(controller.signal.aborted)return;
+      const setters=[setSummary,data=>setMembers(data.items),setPopular,setRecommendations];
+      results.forEach((result,i)=>{if(result.status==='fulfilled')setters[i](result.value.data);});
+      setFailed(results.flatMap((r,i)=>r.status==='rejected'?[paths[i]]:[]));setLoading(false);
+    });
+    return()=>controller.abort();
+  },[retry,user?.id]);
+  const categories=['All',...new Set(popular.map(s=>s.category))],selected=productFeatures.find(f=>f.id===active);
+  const topMatch=recommendations[0];
+  const matchMember=members.find(m=>m.id===topMatch?.skill.owner_id)||(!topMatch&&(members[1]||members[0]));
+  const join=user?'/dashboard':'/register';
+  const loadNotice=<div className="discovery-notice"><Compass size={22}/><div><strong>{failed.length?'The community is taking a moment.':'Be part of the first exchange.'}</strong><p>{failed.length?'We couldn’t load this part of the community. Try again or explore SkillSwap below.':'Share something you know and give another learner a place to start.'}</p></div>{failed.length?<button className="button secondary small" onClick={()=>setRetry(n=>n+1)}>Try again</button>:<Link className="button small" to={join}>Get started</Link>}</div>;
+  return <main className="market-landing" ref={root}>
+    <section className="market-hero"><div className="landing-wrap hero-layout"><div className="market-hero-copy"><span className="eyebrow"><span className="eyebrow-dot"/> Learn from people. Grow together.</span><h1>Your next skill<br/>is already<br/><em>someone’s strength.</em></h1><p>Teach what you know, learn what you need, and meet people ready to grow with you.</p><div className="market-hero-actions"><Link className="button" to={join}>Start exchanging skills <ArrowRight size={18}/></Link><Link className="button secondary" to="/feed?view=people">Explore the community <ArrowUpRight size={17}/></Link></div><div className="hero-trust"><span className="trust-symbol"><Handshake size={20}/></span><div><strong>A little knowledge. A whole new connection.</strong><span>Learn <i/> Teach <i/> Connect <i/> Grow</span></div></div></div><ExchangeVisual/></div><div className="hero-category-ribbon"><div className="landing-wrap">{[['Development',Code2],['Design',Palette],['Data & business',TrendingUp],['Communication',MessageCircle],['Creative skills',Camera]].map(([label,Icon])=><span key={label}><Icon size={17}/>{label}</span>)}</div></div></section>
+    <section className="community-proof-band" aria-label="Community statistics"><div className="landing-wrap proof-layout"><div className="proof-intro"><span className="section-kicker">Knowledge in motion</span><p>{summary?.demo?'Explore our demo community':'A community built on sharing'}</p>{summary?.demo&&<small>Fictional members. Real product flows.</small>}</div>{[['people','Community members'],['teaching_skills','Skills being taught'],['learning_goals','Learning goals']].map(([key,label])=><div className="proof-metric" key={key}><strong>{summary?<AnimatedCounter to={summary[key]||0}/>:<span>—</span>}</strong><span>{label}</span></div>)}<div className="proof-metric"><strong className="proof-smart"><ArrowRightLeft size={26}/></strong><span>Smart skill matching</span></div></div></section>
+    <section className="landing-section role-section" id="why-skillswap"><div className="landing-wrap"><SectionHeading kicker="There’s more than one way to grow" title={<>Something to share.<br/>So much to discover.</>}>You don’t have to know everything. Just bring what you know.</SectionHeading><div className="role-grid">{[
+      ['Teach','Turn what you know into someone else’s next skill.','Your experience has a place here. From your first spreadsheet to your hundredth design project.','Share your skills',GraduationCap,'teach'],
+      ['Learn','Find people who already know what you want to master.','Ask the small questions. Practice the tricky parts. Learn from someone who remembers starting.','Find your next skill',BookOpen,'learn'],
+      ['Exchange','Two people. Two skills. A shared step forward.','Build a learning relationship where both of you bring something valuable to the table.','Start an exchange',ArrowRightLeft,'exchange'],
+    ].map(([title,headline,body,action,Icon,tone],i)=><article className={`role-card role-${tone}`} key={title} data-reveal><div className="role-card-top"><span>0{i+1} / {title.toUpperCase()}</span><Icon size={32}/></div><h3>{headline}</h3><p>{body}</p><div className="role-illustration" aria-hidden="true"><span>{['Your know-how','Your curiosity','You teach'][i]}</span><ArrowRightLeft size={20}/><span>{['Their next step','A fresh perspective','You learn'][i]}</span></div><Link to={i===1?'/feed':join}>{action} <ArrowUpRight size={18}/></Link></article>)}</div></div></section>
+    <section className="landing-section skills-section" id="explore-skills"><div className="landing-wrap"><SectionHeading kicker="A world of possibilities" title="Skills people are exchanging right now" link="/feed" action="Explore all skills">Practical, creative, technical. Find the next thing that makes you curious.</SectionHeading><div className="category-tabs" aria-label="Filter popular skills">{categories.map(c=><button aria-pressed={category===c} className={category===c?'active':''} key={c} onClick={()=>setCategory(c)}>{c==='All'?'All skills':c}</button>)}</div>{loading?<div className="popular-grid">{[1,2,3,4,5,6].map(n=><SkeletonCard key={n}/>)}</div>:popular.length?<div className="popular-grid">{popular.filter(s=>category==='All'||s.category===category).slice(0,6).map(s=>{const Icon=categoryIcons[s.category]||BookOpen;return <article className="popular-card" data-category={s.category} key={s.title+s.category}><div className="popular-art"><span className="popular-category">{s.category}</span><Icon size={50} strokeWidth={1.3}/><span className="popular-art-lines" aria-hidden="true"/></div><div className="popular-content"><h3>{s.title}</h3><div className="popular-counts"><span><GraduationCap size={14}/><b>{s.teachers}</b> teaching</span><span><BookOpen size={14}/><b>{s.learners}</b> learning</span></div><div className="popular-bottom"><span>{s.levels.length===1?s.levels[0]:s.levels.length?'Multiple levels':'Seeking a teacher'}</span><Link to={`/feed?search=${encodeURIComponent(s.title)}`}>Explore <ArrowUpRight size={15}/></Link></div></div></article>;})}</div>:loadNotice}</div></section>
+    <section className="landing-section process-section" id="how-it-works"><div className="landing-wrap"><SectionHeading kicker="From curiosity to connection" title="Your next chapter, in six small steps."/><div className="process-grid">{steps.map(([title,text,Icon],i)=><article className="process-step" data-reveal key={title}><div className="process-step-head"><span>0{i+1}</span><Icon size={21}/></div><h3>{title}</h3><p>{text}</p></article>)}</div></div></section>
+    <section className="matching-section" id="smart-matching"><div className="landing-wrap matching-layout"><div data-reveal><span className="section-kicker">Better together, by design</span><h2>Meet people who fit<br/>what you want<br/><em>to learn.</em></h2><p>A shared interest is a start. Complementary skills make it an exchange. Smart matching helps you see why someone could be a good learning partner.</p><ul className="matching-benefits"><li><Check size={17}/> Skills that connect to your learning goals</li><li><Check size={17}/> Experience levels you can learn from</li><li><Check size={17}/> A chance to give something back</li></ul><Link className="button" to={user?'/innovation':'/register'}>Find your learning fit <ArrowRight size={17}/></Link></div><div className="match-showcase" data-reveal><div className="match-showcase-top"><span><Target size={15}/> {topMatch?'From your recommendations':summary?.demo?'Meet a demo community member':'From the community'}</span>{topMatch&&<b>{topMatch.score}% fit</b>}</div>{matchMember?<><div className="match-showcase-person"><Avatar person={matchMember}/><div><h3>{matchMember.full_name}</h3><span>{matchMember.location||'Open to remote learning'}</span></div></div><div className="match-showcase-skills">{[['Offering','CAN TEACH'],['Requesting','WANTS TO LEARN']].map(([type,label])=><div key={type}><small>{label}</small>{matchMember.skills.filter(s=>s.type===type).slice(0,2).map(s=><strong key={s.id}>{s.title}<span>{s.level}</span></strong>)}</div>)}</div><div className="match-showcase-reason"><ArrowRightLeft size={20}/><div><strong>{topMatch?'Why this match appeared':'What could you learn from each other?'}</strong><p>{topMatch?.reason||'Bring a skill they want to learn, and discover what they can share with you.'}</p></div></div><Link className="button secondary full" to={`/members/${matchMember.id}`}>Meet {matchMember.full_name.split(' ')[0]} <ArrowUpRight size={16}/></Link></>:topMatch?<><h3>{topMatch.skill.owner.full_name}</h3><p>{topMatch.skill.title} · {topMatch.skill.level}</p><p>{topMatch.reason}</p><Link className="button full" to={`/skill/${topMatch.skill.id}`}>View this match <ArrowRight size={16}/></Link></>:<ProductPreview type="matching"/>}<small className="match-disclaimer">{topMatch?'A recommendation is a starting point. Get to know your partner.':'Your personal compatibility score appears after you add your skills.'}</small></div></div></section>
+    <section className="landing-section product-section"><div className="landing-wrap"><SectionHeading kicker="One place. Your whole learning journey." title="Everything happens inside SkillSwap">From “I can help with that” to “look what we made.” Keep the momentum in one place.</SectionHeading><div className="product-tabs" role="tablist" aria-label="Explore SkillSwap features">{productFeatures.map(f=><button role="tab" id={`tab-${f.id}`} aria-controls="product-panel" aria-selected={active===f.id} tabIndex={active===f.id?0:-1} key={f.id} onClick={()=>setActive(f.id)} onKeyDown={e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();const i=productFeatures.findIndex(x=>x.id===active),next=e.key==='Home'?0:e.key==='End'?4:(i+(e.key==='ArrowRight'?1:4))%5;setActive(productFeatures[next].id);document.getElementById(`tab-${productFeatures[next].id}`)?.focus();}}}>{f.label}</button>)}</div><div className="product-tab-panel" id="product-panel" role="tabpanel" aria-labelledby={`tab-${active}`}><div className="product-panel-copy" key={active}><span className="product-step">0{productFeatures.indexOf(selected)+1} / MADE FOR YOUR MOMENTUM</span><h3>{selected.title}</h3><p>{selected.text}</p><Link className="text-link" to={selected.link}>{selected.action} <ArrowRight size={16}/></Link><div className="product-included"><ShieldCheck size={16}/> Connected to your SkillSwap account</div></div><ProductPreview type={active} member={members[0]}/></div></div></section>
+    <section className="landing-section community-section" id="community"><div className="landing-wrap"><SectionHeading kicker={summary?.demo?'The demo community':'The people make it possible'} title="Meet people ready to exchange skills" link="/feed?view=people" action="View community">Different backgrounds. Shared curiosity. Everyone has something to bring.</SectionHeading>{loading?<div className="community-grid">{[1,2,3,4,5,6].map(n=><SkeletonCard key={n}/>)}</div>:members.length?<div className="community-grid">{members.slice(0,6).map(m=><MemberCard key={m.id} member={m} match={recommendations.find(r=>r.skill.owner_id===m.id)?.score}/>)}</div>:loadNotice}</div></section>
+    <section className="pillars-section"><div className="landing-wrap"><SectionHeading kicker="A community worth coming back to" title="Built around people. Designed for progress."/><div className="pillars-grid">{[[Users,'People','Real peer-to-peer learning.','Bring your questions, your experience, and your own way of seeing things.'],[Target,'Compatibility','A reason to learn together.','Discover shared goals and complementary skills, then choose the right fit for you.'],[Heart,'Continuity','Keep a good thing going.','Your conversations, sessions, and shared progress stay connected.']].map(([Icon,title,lead,text])=><article key={title} data-reveal><Icon size={27}/><span>{title}</span><h3>{lead}</h3><p>{text}</p></article>)}</div></div></section>
+    <section className="landing-section story-sequence"><div className="landing-wrap"><SectionHeading kicker="Picture your first exchange" title="Small moments. Meaningful progress."/>{productFeatures.map((f,i)=><article className={`story-row ${i%2?'reverse':''}`} data-reveal key={f.id}><div className="story-preview"><ProductPreview type={f.id} member={members[i%Math.max(members.length,1)]}/></div><div className="story-copy"><span className="story-index">0{i+1} <span>/ {f.label}</span></span><h3>{f.title}</h3><p>{f.text}</p><Link className="text-link" to={f.link}>{f.action} <ArrowUpRight size={16}/></Link></div></article>)}</div></section>
+    <section className="journey-cta"><div className="landing-wrap"><div><span className="section-kicker">You already have something to offer</span><h2>One skill can start<br/>a whole new connection.</h2><p>Share what you know. Find what you want to learn.</p></div><div className="journey-actions"><Link className="button light-button" to={join}>Join SkillSwap <ArrowRight size={18}/></Link><Link to="/feed">Explore skills <ArrowUpRight size={16}/></Link></div><ArrowRightLeft className="cta-exchange" size={230} strokeWidth={.8} aria-hidden="true"/></div></section>
+    <section className="landing-section faq-section" id="faq"><div className="landing-wrap faq-layout"><div><span className="section-kicker">A few things you might be wondering</span><h2>Good questions.<br/>Clear answers.</h2><p>Your first exchange should feel simple. Here’s how the essentials work.</p><span className="faq-note"><MessageCircle size={22}/> Learning starts with asking.</span></div><div className="faq-list">{faqs.map(([question,answer],i)=><article className={`faq-item ${faq===i?'open':''}`} key={question}><h3><button id={`faq-button-${i}`} aria-expanded={faq===i} aria-controls={`faq-answer-${i}`} onClick={()=>setFaq(faq===i?null:i)}>{question}<ChevronDown size={18}/></button></h3><div className="faq-answer" id={`faq-answer-${i}`} role="region" aria-labelledby={`faq-button-${i}`} inert={faq===i?undefined:''} aria-hidden={faq!==i}><div><p>{answer}</p></div></div></article>)}</div></div></section>
+  </main>;
 }

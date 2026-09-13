@@ -7,9 +7,10 @@ import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ErrorBoundary from './components/ErrorBoundary';
 import Landing from './pages/Landing';
-import {Login,Register,GoogleCallback} from './pages/Auth';
+import {Login,Register} from './pages/Auth';
 import './styles.css';
 import './collaboration.css';
+import './premium.css';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Feed = lazy(() => import('./pages/Feed'));
@@ -25,12 +26,13 @@ const VideoSession = lazy(() => import('./pages/VideoSession'));
 const Innovation = lazy(() => import('./pages/Innovation'));
 const JudgeMode = lazy(() => import('./pages/JudgeMode'));
 const Legal = lazy(() => import('./pages/Legal'));
+const MemberProfile = lazy(() => import('./pages/MemberProfile'));
 
 function ScrollPosition() {
   const {pathname, hash} = useLocation();
   useEffect(() => {
     if (hash) {
-      const timer = setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({behavior: 'smooth'}), 100);
+      const timer = setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'}), 100);
       return () => clearTimeout(timer);
     }
     window.scrollTo(0, 0);
@@ -62,10 +64,10 @@ export default function App() {
                   <Route path="/" element={<Landing/>}/>
                   <Route path="/login" element={<Login/>}/>
                   <Route path="/register" element={<Register/>}/>
-                  <Route path="/auth/google/callback" element={<GoogleCallback/>}/>
                   <Route path="/privacy" element={<Legal type="privacy"/>}/>
                   <Route path="/terms" element={<Legal type="terms"/>}/>
                   <Route path="/feed" element={<Feed/>}/>
+                  <Route path="/members/:id" element={<MemberProfile/>}/>
                   <Route path="/skill/:id" element={privatePage(SkillDetail)}/>
                   <Route path="/dashboard" element={privatePage(Dashboard)}/>
                   <Route path="/add-skill" element={privatePage(AddSkill)}/>

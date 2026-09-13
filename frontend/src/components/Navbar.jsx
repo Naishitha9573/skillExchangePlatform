@@ -1,9 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {Link,useLocation,useNavigate} from 'react-router-dom';
-import {Sparkles,LayoutDashboard,Compass,MessageCircle,ArrowRightLeft,UserCircle,LogOut,BrainCircuit,Trophy,CalendarDays,Presentation,Menu,X} from 'lucide-react';
+import {LayoutDashboard,Compass,MessageCircle,ArrowRightLeft,UserCircle,LogOut,BrainCircuit,Trophy,CalendarDays,Presentation,Menu,X} from 'lucide-react';
 import {useAuth} from '../context/AuthContext';
 import {useRealtime} from '../context/RealtimeContext';
 import NotificationBell from './NotificationBell';
+import BrandMark from './BrandMark';
 
 const links=[
   ['/dashboard','Dashboard',LayoutDashboard],
@@ -11,10 +12,9 @@ const links=[
   ['/swaps','Swaps',ArrowRightLeft],
   ['/messages','Messages',MessageCircle],
   ['/sessions','Sessions',CalendarDays],
-  ['/coach','AI Coach',BrainCircuit],
+  ['/coach','Learning coach',BrainCircuit],
   ['/leaderboard','Leaderboard',Trophy],
-  ['/innovation','Innovation',Sparkles],
-  ['/judge','Judge Demo',Presentation]
+  ['/innovation','Smart matching',BrainCircuit]
 ];
 
 const bottomLinks = [
@@ -33,7 +33,7 @@ export default function Navbar() {
   const [open,setOpen] = useState(false);
   const ref = useRef(null);
 
-  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => setOpen(false), [location.pathname,location.hash,location.search]);
 
   useEffect(() => {
     const close = e => { if (!ref.current?.contains(e.target)) setOpen(false); };
@@ -61,8 +61,8 @@ export default function Navbar() {
     <>
       <header className="nav" ref={ref}>
         <Link to={user ? '/dashboard' : '/'} className="brand">
-          <span className="brandIcon"><Sparkles size={17}/></span>
-          SkillSwap<span className="ai">AI</span>
+          <span className="brandIcon"><BrandMark size={25}/></span>
+          SkillSwap
         </Link>
 
         {user ? (
@@ -70,9 +70,11 @@ export default function Navbar() {
             {links.slice(0, 5).map(navLink)}
           </nav>
         ) : (
-          <nav className="public-links">
+          <nav className="public-links" aria-label="Main navigation">
             <Link to="/#how-it-works">How it works</Link>
-            <Link to="/#why-skillswap">Why SkillSwap</Link>
+            <Link to="/feed">Explore skills</Link>
+            <Link to="/#smart-matching">Smart matching</Link>
+            <Link to="/#community">Community</Link>
           </nav>
         )}
 
@@ -97,10 +99,12 @@ export default function Navbar() {
             <>
               <Link to="/login" className="ghost">Log in</Link>
               <Link to="/register" className="button small">Get started <ArrowRightLeft size={14}/></Link>
+              <button className="ghost icon-button public-menu-button" aria-label={open?'Close navigation':'Open navigation'} aria-expanded={open} aria-controls="public-menu" onClick={()=>setOpen(!open)}>{open?<X size={20}/>:<Menu size={20}/>}</button>
             </>
           )}
         </div>
 
+        {!user&&open&&<nav id="public-menu" className="navigation-menu public-menu card" aria-label="Mobile main navigation"><Link to="/#how-it-works">How it works</Link><Link to="/feed">Explore skills</Link><Link to="/#smart-matching">Smart matching</Link><Link to="/#community">Community</Link><Link to="/login">Log in</Link><Link to="/register">Create your account</Link></nav>}
         {user && open && (
           <nav id="navigation-menu" className="navigation-menu card" aria-label="More navigation">
             {links.map(navLink)}
